@@ -1,5 +1,6 @@
 package com.wavedefense.arena;
 
+import net.minecraft.block.Blocks;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.SpawnReason;
 import net.minecraft.entity.attribute.EntityAttributes;
@@ -13,8 +14,10 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.Heightmap;
 import net.minecraft.world.World;
+import net.minecraft.world.chunk.WorldChunk;
 
 import java.util.*;
 
@@ -36,7 +39,7 @@ public class SurvivalArena {
     private final Map<UUID, BotAI> botAIs = new HashMap<>();
     private final Random random = new Random();
 
-    public void startSurvival(ServerPlayerEntity player) {
+    public void startSurvival(ServerPlayerEntity player, Kit kit) {
         MinecraftServer server = player.getCommandSource().getServer();
         ServerWorld survivalWorld = server.getWorld(SURVIVAL_DIMENSION);
 
@@ -46,22 +49,38 @@ public class SurvivalArena {
             return;
         }
 
-        // Save player data
-        PlayerData data = new PlayerData(player);
+        // Save player data including original world
+        PlayerData data = new PlayerData(player, server);
         playerData.put(player.getUuid(), data);
         playerBots.put(player.getUuid(), new ArrayList<>());
 
-        // Give random kit
-        Kit kit = getRandomKit();
+        // Pre-generate chunks around spawn
+        for (int cx = -2; cx <= 2; cx++) {
+            for (int cz = -2; cz <= 2; cz++) {
+                survivalWorld.getChunk(cx, cz);
+            }
+        }
+
+        // Find spawn location at world center
+        BlockPos spawnPos = findSafeSpawn(survivalWorld, 0, 0);
+
+        // Make sure there's solid ground
+        if (survivalWorld.getBlockState(spawnPos).isAir()) {
+            // Create a small platform if needed
+            survivalWorld.setBlockState(spawnPos, Blocks.GRASS_BLOCK.getDefaultState());
+        }
+
+        // Clear inventory and apply kit
         player.getInventory().clear();
         kit.applyToPlayer(player);
-
-        // Find spawn location
-        BlockPos spawnPos = findSafeSpawn(survivalWorld, 0, 0);
+        player.setHealth(player.getMaxHealth());
+        player.getHungerManager().setFoodLevel(20);
 
         // Teleport
         player.teleport(survivalWorld, spawnPos.getX() + 0.5, spawnPos.getY() + 1, spawnPos.getZ() + 0.5,
                 java.util.Set.of(), 0, 0, true);
+        player.setVelocity(0, 0, 0);
+        player.velocityDirty = true;
 
         player.sendMessage(Text.literal("=== SURVIVAL ARENA ===")
                 .formatted(Formatting.GOLD, Formatting.BOLD), false);
@@ -71,6 +90,8 @@ public class SurvivalArena {
                 .formatted(Formatting.AQUA), false);
         player.sendMessage(Text.literal("Besiege sie und sammle Erfahrung!")
                 .formatted(Formatting.GREEN), false);
+        player.sendMessage(Text.literal("Nutze /wd exit um zu verlassen")
+                .formatted(Formatting.GRAY), false);
     }
 
     public void leaveSurvival(ServerPlayerEntity player) {
@@ -88,12 +109,28 @@ public class SurvivalArena {
             }
         }
 
-        // Restore player
+        // Restore player and teleport back
         PlayerData data = playerData.get(playerId);
         if (data != null) {
+            // Get original world
+            ServerWorld originalWorld = server.getWorld(data.originalWorld);
+            if (originalWorld == null) {
+                originalWorld = server.getOverworld();
+            }
+
+            // Teleport back first
+            player.teleport(originalWorld, data.originalPos.x, data.originalPos.y, data.originalPos.z,
+                    java.util.Set.of(), data.yaw, data.pitch, true);
+            player.setVelocity(0, 0, 0);
+            player.velocityDirty = true;
+
+            // Then restore inventory
             data.restore(player);
+        } else {
+            // Fallback: teleport to overworld spawn
             ServerWorld overworld = server.getOverworld();
-            player.teleport(overworld, data.originalPos.x, data.originalPos.y, data.originalPos.z,
+            int y = overworld.getTopY(Heightmap.Type.MOTION_BLOCKING, 0, 0);
+            player.teleport(overworld, 0.5, y + 1, 0.5,
                     java.util.Set.of(), 0, 0, true);
         }
 
@@ -185,7 +222,7 @@ public class SurvivalArena {
 
         bot.getAttributeInstance(EntityAttributes.MAX_HEALTH).setBaseValue(difficulty.getHealth());
         bot.getAttributeInstance(EntityAttributes.MOVEMENT_SPEED).setBaseValue(difficulty.getMovementSpeed());
-        bot.getAttributeInstance(EntityAttributes.FOLLOW_RANGE).setBaseValue(50.0);
+        bot.getAttributeInstance(EntityAttributes.FOLLOW_RANGE).setBaseValue(difficulty.getFollowRange());
         bot.getAttributeInstance(EntityAttributes.ATTACK_DAMAGE).setBaseValue(7.0 * difficulty.getDamageMultiplier());
         bot.setHealth(difficulty.getHealth());
 
@@ -215,14 +252,20 @@ public class SurvivalArena {
 
     private static class PlayerData {
         final net.minecraft.util.math.Vec3d originalPos;
+        final RegistryKey<World> originalWorld;
+        final float yaw;
+        final float pitch;
         final List<net.minecraft.item.ItemStack> inventory = new ArrayList<>();
         final List<net.minecraft.item.ItemStack> armor = new ArrayList<>();
         final net.minecraft.item.ItemStack offhand;
         final float health;
         final int food;
 
-        PlayerData(ServerPlayerEntity player) {
+        PlayerData(ServerPlayerEntity player, MinecraftServer server) {
             this.originalPos = new net.minecraft.util.math.Vec3d(player.getX(), player.getY(), player.getZ());
+            this.originalWorld = player.getCommandSource().getWorld().getRegistryKey();
+            this.yaw = player.getYaw();
+            this.pitch = player.getPitch();
             this.health = player.getHealth();
             this.food = player.getHungerManager().getFoodLevel();
 

@@ -1,22 +1,24 @@
 package com.wavedefense.arena;
 
 public enum Difficulty {
-    EASY("Easy", 0.25, 0.5, 10.0f, 50),
-    MEDIUM("Medium", 0.30, 0.75, 20.0f, 30),
-    HARD("Hard", 0.35, 1.0, 30.0f, 15);
+    EASY("Easy", 0.25, 0.5, 10.0f, 50, 3.0),      // Player range
+    MEDIUM("Medium", 0.30, 0.75, 20.0f, 30, 3.0), // Player range
+    HARD("Hard", 0.35, 1.0, 30.0f, 15, 10.0);     // Extended range (max 10)
 
     private final String name;
     private final double movementSpeed;
     private final double damageMultiplier;
     private final float health;
     private final int reactionDelayTicks; // Lower = faster reactions
+    private final double followRange; // Attack/follow range
 
-    Difficulty(String name, double movementSpeed, double damageMultiplier, float health, int reactionDelayTicks) {
+    Difficulty(String name, double movementSpeed, double damageMultiplier, float health, int reactionDelayTicks, double followRange) {
         this.name = name;
         this.movementSpeed = movementSpeed;
         this.damageMultiplier = damageMultiplier;
         this.health = health;
         this.reactionDelayTicks = reactionDelayTicks;
+        this.followRange = followRange;
     }
 
     public String getName() {
@@ -37,6 +39,10 @@ public enum Difficulty {
 
     public int getReactionDelayTicks() {
         return reactionDelayTicks;
+    }
+
+    public double getFollowRange() {
+        return followRange;
     }
 
     public static Difficulty fromString(String name) {

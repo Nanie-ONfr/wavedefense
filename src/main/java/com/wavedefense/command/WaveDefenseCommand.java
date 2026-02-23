@@ -157,7 +157,14 @@ public class WaveDefenseCommand {
                     .executes(context -> executeKit(context.getSource(), Kit.SHIELD)))
             )
             .then(CommandManager.literal("survival")
-                .executes(context -> executeSurvival(context.getSource()))
+                .executes(context -> executeSurvivalHelp(context.getSource()))
+                .then(CommandManager.literal("mace").executes(context -> executeSurvival(context.getSource(), Kit.MACE)))
+                .then(CommandManager.literal("sword").executes(context -> executeSurvival(context.getSource(), Kit.SWORD)))
+                .then(CommandManager.literal("axe").executes(context -> executeSurvival(context.getSource(), Kit.AXE)))
+                .then(CommandManager.literal("bow").executes(context -> executeSurvival(context.getSource(), Kit.BOW)))
+                .then(CommandManager.literal("crystal").executes(context -> executeSurvival(context.getSource(), Kit.CRYSTAL)))
+                .then(CommandManager.literal("uhc").executes(context -> executeSurvival(context.getSource(), Kit.UHC)))
+                .then(CommandManager.literal("shield").executes(context -> executeSurvival(context.getSource(), Kit.SHIELD)))
             )
             .then(CommandManager.literal("exit")
                 .executes(context -> executeExitSurvival(context.getSource()))
@@ -282,7 +289,14 @@ public class WaveDefenseCommand {
                     .executes(context -> executeKit(context.getSource(), Kit.SHIELD)))
             )
             .then(CommandManager.literal("survival")
-                .executes(context -> executeSurvival(context.getSource()))
+                .executes(context -> executeSurvivalHelp(context.getSource()))
+                .then(CommandManager.literal("mace").executes(context -> executeSurvival(context.getSource(), Kit.MACE)))
+                .then(CommandManager.literal("sword").executes(context -> executeSurvival(context.getSource(), Kit.SWORD)))
+                .then(CommandManager.literal("axe").executes(context -> executeSurvival(context.getSource(), Kit.AXE)))
+                .then(CommandManager.literal("bow").executes(context -> executeSurvival(context.getSource(), Kit.BOW)))
+                .then(CommandManager.literal("crystal").executes(context -> executeSurvival(context.getSource(), Kit.CRYSTAL)))
+                .then(CommandManager.literal("uhc").executes(context -> executeSurvival(context.getSource(), Kit.UHC)))
+                .then(CommandManager.literal("shield").executes(context -> executeSurvival(context.getSource(), Kit.SHIELD)))
             )
             .then(CommandManager.literal("exit")
                 .executes(context -> executeExitSurvival(context.getSource()))
@@ -290,7 +304,20 @@ public class WaveDefenseCommand {
         );
     }
 
-    private static int executeSurvival(ServerCommandSource source) {
+    private static int executeSurvivalHelp(ServerCommandSource source) {
+        source.sendFeedback(() -> Text.literal("=== Survival Arena ===")
+            .formatted(Formatting.GOLD, Formatting.BOLD), false);
+        source.sendFeedback(() -> Text.literal("/wd survival <kit>").formatted(Formatting.YELLOW), false);
+        source.sendFeedback(() -> Text.literal(""), false);
+        source.sendFeedback(() -> Text.literal("Kits: mace, sword, axe, bow, crystal, uhc, shield")
+            .formatted(Formatting.AQUA), false);
+        source.sendFeedback(() -> Text.literal(""), false);
+        source.sendFeedback(() -> Text.literal("Beispiel: /wd survival sword")
+            .formatted(Formatting.GRAY), false);
+        return 1;
+    }
+
+    private static int executeSurvival(ServerCommandSource source, Kit kit) {
         if (!source.isExecutedByPlayer()) {
             source.sendError(Text.literal("Nur Spieler können diesen Befehl nutzen!"));
             return 0;
@@ -304,7 +331,7 @@ public class WaveDefenseCommand {
             return 0;
         }
 
-        survivalArena.startSurvival(player);
+        survivalArena.startSurvival(player, kit);
         return 1;
     }
 

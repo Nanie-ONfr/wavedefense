@@ -188,7 +188,7 @@ public class ArenaManager {
         // Stats based on difficulty
         bot.getAttributeInstance(EntityAttributes.MAX_HEALTH).setBaseValue(difficulty.getHealth());
         bot.getAttributeInstance(EntityAttributes.MOVEMENT_SPEED).setBaseValue(difficulty.getMovementSpeed());
-        bot.getAttributeInstance(EntityAttributes.FOLLOW_RANGE).setBaseValue(40.0);
+        bot.getAttributeInstance(EntityAttributes.FOLLOW_RANGE).setBaseValue(difficulty.getFollowRange());
         bot.getAttributeInstance(EntityAttributes.ATTACK_DAMAGE).setBaseValue(getWeaponDamage(kit) * difficulty.getDamageMultiplier());
         bot.getAttributeInstance(EntityAttributes.ATTACK_KNOCKBACK).setBaseValue(0.5);
         bot.setHealth(difficulty.getHealth());
