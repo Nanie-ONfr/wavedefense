@@ -54,9 +54,11 @@ public class SurvivalArena {
         playerData.put(player.getUuid(), data);
         playerBots.put(player.getUuid(), new ArrayList<>());
 
-        // Pre-generate chunks around spawn
-        for (int cx = -2; cx <= 2; cx++) {
-            for (int cz = -2; cz <= 2; cz++) {
+        // Force-load and generate chunks around spawn
+        for (int cx = -3; cx <= 3; cx++) {
+            for (int cz = -3; cz <= 3; cz++) {
+                ChunkPos chunkPos = new ChunkPos(cx, cz);
+                survivalWorld.setChunkForced(cx, cz, true);
                 survivalWorld.getChunk(cx, cz);
             }
         }
@@ -64,10 +66,18 @@ public class SurvivalArena {
         // Find spawn location at world center
         BlockPos spawnPos = findSafeSpawn(survivalWorld, 0, 0);
 
-        // Make sure there's solid ground
-        if (survivalWorld.getBlockState(spawnPos).isAir()) {
-            // Create a small platform if needed
-            survivalWorld.setBlockState(spawnPos, Blocks.GRASS_BLOCK.getDefaultState());
+        // Create a spawn platform to ensure solid ground
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                BlockPos platformPos = new BlockPos(dx, spawnPos.getY(), dz);
+                if (survivalWorld.getBlockState(platformPos).isAir()) {
+                    survivalWorld.setBlockState(platformPos, Blocks.GRASS_BLOCK.getDefaultState());
+                }
+                // Clear blocks above platform
+                for (int dy = 1; dy <= 3; dy++) {
+                    survivalWorld.setBlockState(platformPos.up(dy), Blocks.AIR.getDefaultState());
+                }
+            }
         }
 
         // Clear inventory and apply kit
