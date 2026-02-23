@@ -1,6 +1,7 @@
 package com.wavedefense.game;
 
 import com.wavedefense.WaveDefenseMod;
+import com.wavedefense.fighter.FighterSpawner;
 import com.wavedefense.spawner.MobSpawner;
 import net.minecraft.entity.Entity;
 import net.minecraft.server.MinecraftServer;
@@ -17,6 +18,7 @@ public class WaveManager {
     private final Map<UUID, GameSession> activeSessions = new HashMap<>();
     private final WaveConfig config = new WaveConfig();
     private final MobSpawner mobSpawner = new MobSpawner();
+    private final FighterSpawner fighterSpawner = new FighterSpawner();
 
     public WaveConfig getConfig() {
         return config;
@@ -30,7 +32,7 @@ public class WaveManager {
         UUID playerId = player.getUuid();
 
         if (activeSessions.containsKey(playerId)) {
-            player.sendMessage(Text.literal("You already have an active game! Use /wavedefense stop first.")
+            player.sendMessage(Text.literal("Du hast bereits ein aktives Spiel! Nutze /wavedefense stop zuerst.")
                 .formatted(Formatting.RED), false);
             return false;
         }
@@ -38,10 +40,12 @@ public class WaveManager {
         GameSession session = new GameSession(player, waves);
         activeSessions.put(playerId, session);
 
-        player.sendMessage(Text.literal("=== WAVE DEFENSE STARTED ===")
+        player.sendMessage(Text.literal("=== WAVE DEFENSE GESTARTET ===")
             .formatted(Formatting.GOLD, Formatting.BOLD), false);
-        player.sendMessage(Text.literal("Total waves: " + waves)
+        player.sendMessage(Text.literal("Wellen: " + waves)
             .formatted(Formatting.YELLOW), false);
+        player.sendMessage(Text.literal("⚔ PvP-Kämpfer erscheinen ab Welle 5! ⚔")
+            .formatted(Formatting.LIGHT_PURPLE), false);
 
         startNextWave(player, session);
         return true;
@@ -52,7 +56,7 @@ public class WaveManager {
         GameSession session = activeSessions.get(playerId);
 
         if (session == null) {
-            player.sendMessage(Text.literal("You don't have an active game!")
+            player.sendMessage(Text.literal("Du hast kein aktives Spiel!")
                 .formatted(Formatting.RED), false);
             return false;
         }
@@ -60,7 +64,7 @@ public class WaveManager {
         cleanupSession(getPlayerWorld(player), session);
         activeSessions.remove(playerId);
 
-        player.sendMessage(Text.literal("=== WAVE DEFENSE STOPPED ===")
+        player.sendMessage(Text.literal("=== WAVE DEFENSE GESTOPPT ===")
             .formatted(Formatting.RED, Formatting.BOLD), false);
         return true;
     }
@@ -73,14 +77,23 @@ public class WaveManager {
         int wave = session.getCurrentWave();
         int totalWaves = session.getTotalWaves();
 
-        player.sendMessage(Text.literal("--- WAVE " + wave + "/" + totalWaves + " ---")
+        player.sendMessage(Text.literal("--- WELLE " + wave + "/" + totalWaves + " ---")
             .formatted(Formatting.AQUA, Formatting.BOLD), false);
 
         int mobCount = config.getMobCountForWave(wave);
-        player.sendMessage(Text.literal("Enemies incoming: " + mobCount)
+        player.sendMessage(Text.literal("Gegner: " + mobCount)
             .formatted(Formatting.RED), false);
 
+        // Spawn regular mobs
         mobSpawner.spawnWave(player, session, config);
+
+        // Spawn PvP fighters from wave 5 onwards
+        if (wave >= 5) {
+            fighterSpawner.spawnFighters(player, session, config, wave);
+            int fighterCount = wave < 7 ? 1 : (wave < 9 ? 2 : 3 + (wave - 9));
+            player.sendMessage(Text.literal("⚔ " + fighterCount + " PvP-Kämpfer! ⚔")
+                .formatted(Formatting.LIGHT_PURPLE, Formatting.BOLD), false);
+        }
     }
 
     private void cleanupSession(ServerWorld world, GameSession session) {
@@ -141,18 +154,18 @@ public class WaveManager {
     private void onWaveCompleted(ServerPlayerEntity player, GameSession session) {
         int wave = session.getCurrentWave();
 
-        player.sendMessage(Text.literal("Wave " + wave + " completed!")
+        player.sendMessage(Text.literal("Welle " + wave + " geschafft!")
             .formatted(Formatting.GREEN, Formatting.BOLD), false);
 
         if (session.isLastWave()) {
             session.setState(GameSession.GameState.GAME_WON);
-            player.sendMessage(Text.literal("=== VICTORY! ALL WAVES DEFEATED! ===")
+            player.sendMessage(Text.literal("=== SIEG! ALLE WELLEN BESIEGT! ===")
                 .formatted(Formatting.GOLD, Formatting.BOLD), false);
         } else {
             session.setState(GameSession.GameState.BETWEEN_WAVES);
             session.setTicksUntilNextWave(config.getDelayBetweenWaves() * 20);
 
-            player.sendMessage(Text.literal("Next wave in " + config.getDelayBetweenWaves() + " seconds...")
+            player.sendMessage(Text.literal("Nächste Welle in " + config.getDelayBetweenWaves() + " Sekunden...")
                 .formatted(Formatting.YELLOW), false);
         }
     }

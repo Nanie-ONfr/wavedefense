@@ -1,0 +1,50 @@
+package com.wavedefense.arena;
+
+public enum Difficulty {
+    EASY("Easy", 0.25, 0.5, 10.0f, 50),
+    MEDIUM("Medium", 0.30, 0.75, 20.0f, 30),
+    HARD("Hard", 0.35, 1.0, 30.0f, 15);
+
+    private final String name;
+    private final double movementSpeed;
+    private final double damageMultiplier;
+    private final float health;
+    private final int reactionDelayTicks; // Lower = faster reactions
+
+    Difficulty(String name, double movementSpeed, double damageMultiplier, float health, int reactionDelayTicks) {
+        this.name = name;
+        this.movementSpeed = movementSpeed;
+        this.damageMultiplier = damageMultiplier;
+        this.health = health;
+        this.reactionDelayTicks = reactionDelayTicks;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public double getMovementSpeed() {
+        return movementSpeed;
+    }
+
+    public double getDamageMultiplier() {
+        return damageMultiplier;
+    }
+
+    public float getHealth() {
+        return health;
+    }
+
+    public int getReactionDelayTicks() {
+        return reactionDelayTicks;
+    }
+
+    public static Difficulty fromString(String name) {
+        for (Difficulty d : values()) {
+            if (d.name().equalsIgnoreCase(name) || d.getName().equalsIgnoreCase(name)) {
+                return d;
+            }
+        }
+        return null;
+    }
+}
