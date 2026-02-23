@@ -107,6 +107,7 @@ public class LobbyManager {
             case CRYSTAL -> Blocks.MAGENTA_CONCRETE.getDefaultState();
             case UHC -> Blocks.GREEN_CONCRETE.getDefaultState();
             case SHIELD -> Blocks.CYAN_CONCRETE.getDefaultState();
+            case POTION -> Blocks.PINK_CONCRETE.getDefaultState();
         };
     }
 

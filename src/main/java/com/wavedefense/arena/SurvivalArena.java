@@ -41,44 +41,16 @@ public class SurvivalArena {
 
     public void startSurvival(ServerPlayerEntity player, Kit kit) {
         MinecraftServer server = player.getCommandSource().getServer();
-        ServerWorld survivalWorld = server.getWorld(SURVIVAL_DIMENSION);
-
-        if (survivalWorld == null) {
-            player.sendMessage(Text.literal("Dimension nicht verfügbar!")
-                    .formatted(Formatting.RED), false);
-            return;
-        }
+        // Use overworld for survival - custom dimension has terrain issues
+        ServerWorld survivalWorld = server.getOverworld();
 
         // Save player data including original world
         PlayerData data = new PlayerData(player, server);
         playerData.put(player.getUuid(), data);
         playerBots.put(player.getUuid(), new ArrayList<>());
 
-        // Force-load and generate chunks around spawn
-        for (int cx = -3; cx <= 3; cx++) {
-            for (int cz = -3; cz <= 3; cz++) {
-                ChunkPos chunkPos = new ChunkPos(cx, cz);
-                survivalWorld.setChunkForced(cx, cz, true);
-                survivalWorld.getChunk(cx, cz);
-            }
-        }
-
-        // Find spawn location at world center
+        // Find spawn location - use world spawn
         BlockPos spawnPos = findSafeSpawn(survivalWorld, 0, 0);
-
-        // Create a spawn platform to ensure solid ground
-        for (int dx = -2; dx <= 2; dx++) {
-            for (int dz = -2; dz <= 2; dz++) {
-                BlockPos platformPos = new BlockPos(dx, spawnPos.getY(), dz);
-                if (survivalWorld.getBlockState(platformPos).isAir()) {
-                    survivalWorld.setBlockState(platformPos, Blocks.GRASS_BLOCK.getDefaultState());
-                }
-                // Clear blocks above platform
-                for (int dy = 1; dy <= 3; dy++) {
-                    survivalWorld.setBlockState(platformPos.up(dy), Blocks.AIR.getDefaultState());
-                }
-            }
-        }
 
         // Clear inventory and apply kit
         player.getInventory().clear();
@@ -110,7 +82,7 @@ public class SurvivalArena {
 
         // Remove all bots
         List<UUID> bots = playerBots.getOrDefault(playerId, new ArrayList<>());
-        ServerWorld survivalWorld = server.getWorld(SURVIVAL_DIMENSION);
+        ServerWorld survivalWorld = server.getOverworld();
         if (survivalWorld != null) {
             for (UUID botId : bots) {
                 var bot = survivalWorld.getEntity(botId);
@@ -152,14 +124,15 @@ public class SurvivalArena {
     }
 
     public void tick(ServerWorld world) {
-        if (!world.getRegistryKey().equals(SURVIVAL_DIMENSION)) return;
+        // Only tick in overworld (survival uses overworld now)
+        if (!world.getRegistryKey().equals(World.OVERWORLD)) return;
 
         MinecraftServer server = world.getServer();
 
         for (UUID playerId : new HashSet<>(playerData.keySet())) {
             ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
             if (player == null) continue;
-            if (!player.getCommandSource().getWorld().getRegistryKey().equals(SURVIVAL_DIMENSION)) continue;
+            if (!player.getCommandSource().getWorld().getRegistryKey().equals(World.OVERWORLD)) continue;
 
             // Check and spawn bots
             List<UUID> bots = playerBots.getOrDefault(playerId, new ArrayList<>());

@@ -4,6 +4,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.wavedefense.WaveDefenseMod;
 import com.wavedefense.arena.ArenaManager;
+import com.wavedefense.arena.BotConfig;
 import com.wavedefense.arena.Difficulty;
 import com.wavedefense.arena.Kit;
 import com.wavedefense.arena.SurvivalArena;
@@ -21,6 +22,7 @@ public class WaveDefenseCommand {
 
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
         dispatcher.register(CommandManager.literal("wavedefense")
+            .executes(context -> executeHelp(context.getSource()))
             .then(CommandManager.literal("start")
                 .executes(context -> executeStart(context.getSource(), 10))
                 .then(CommandManager.argument("waves", IntegerArgumentType.integer(1, 100))
@@ -92,6 +94,11 @@ public class WaveDefenseCommand {
                     .then(CommandManager.literal("easy").executes(context -> executeArena(context.getSource(), Kit.SHIELD, Difficulty.EASY)))
                     .then(CommandManager.literal("medium").executes(context -> executeArena(context.getSource(), Kit.SHIELD, Difficulty.MEDIUM)))
                     .then(CommandManager.literal("hard").executes(context -> executeArena(context.getSource(), Kit.SHIELD, Difficulty.HARD))))
+                .then(CommandManager.literal("potion")
+                    .executes(context -> executeArena(context.getSource(), Kit.POTION, Difficulty.MEDIUM))
+                    .then(CommandManager.literal("easy").executes(context -> executeArena(context.getSource(), Kit.POTION, Difficulty.EASY)))
+                    .then(CommandManager.literal("medium").executes(context -> executeArena(context.getSource(), Kit.POTION, Difficulty.MEDIUM)))
+                    .then(CommandManager.literal("hard").executes(context -> executeArena(context.getSource(), Kit.POTION, Difficulty.HARD))))
             )
             .then(CommandManager.literal("leave")
                 .executes(context -> executeLeave(context.getSource()))
@@ -136,6 +143,11 @@ public class WaveDefenseCommand {
                     .then(CommandManager.literal("easy").executes(context -> executePlay(context.getSource(), Kit.SHIELD, Difficulty.EASY)))
                     .then(CommandManager.literal("medium").executes(context -> executePlay(context.getSource(), Kit.SHIELD, Difficulty.MEDIUM)))
                     .then(CommandManager.literal("hard").executes(context -> executePlay(context.getSource(), Kit.SHIELD, Difficulty.HARD))))
+                .then(CommandManager.literal("potion")
+                    .executes(context -> executePlay(context.getSource(), Kit.POTION, Difficulty.MEDIUM))
+                    .then(CommandManager.literal("easy").executes(context -> executePlay(context.getSource(), Kit.POTION, Difficulty.EASY)))
+                    .then(CommandManager.literal("medium").executes(context -> executePlay(context.getSource(), Kit.POTION, Difficulty.MEDIUM)))
+                    .then(CommandManager.literal("hard").executes(context -> executePlay(context.getSource(), Kit.POTION, Difficulty.HARD))))
             )
             .then(CommandManager.literal("stats")
                 .executes(context -> executeStats(context.getSource()))
@@ -155,6 +167,8 @@ public class WaveDefenseCommand {
                     .executes(context -> executeKit(context.getSource(), Kit.UHC)))
                 .then(CommandManager.literal("shield")
                     .executes(context -> executeKit(context.getSource(), Kit.SHIELD)))
+                .then(CommandManager.literal("potion")
+                    .executes(context -> executeKit(context.getSource(), Kit.POTION)))
             )
             .then(CommandManager.literal("survival")
                 .executes(context -> executeSurvivalHelp(context.getSource()))
@@ -165,14 +179,25 @@ public class WaveDefenseCommand {
                 .then(CommandManager.literal("crystal").executes(context -> executeSurvival(context.getSource(), Kit.CRYSTAL)))
                 .then(CommandManager.literal("uhc").executes(context -> executeSurvival(context.getSource(), Kit.UHC)))
                 .then(CommandManager.literal("shield").executes(context -> executeSurvival(context.getSource(), Kit.SHIELD)))
+                .then(CommandManager.literal("potion").executes(context -> executeSurvival(context.getSource(), Kit.POTION)))
             )
             .then(CommandManager.literal("exit")
                 .executes(context -> executeExitSurvival(context.getSource()))
+            )
+            .then(CommandManager.literal("rematch")
+                .executes(context -> executeRematch(context.getSource()))
+            )
+            .then(CommandManager.literal("config")
+                .then(CommandManager.literal("reload")
+                    .requires(ServerCommandSource::isExecutedByPlayer)
+                    .executes(context -> executeConfigReload(context.getSource()))
+                )
             )
         );
 
         // Short alias
         dispatcher.register(CommandManager.literal("wd")
+            .executes(context -> executeHelp(context.getSource()))
             .then(CommandManager.literal("start")
                 .executes(context -> executeStart(context.getSource(), 10))
                 .then(CommandManager.argument("waves", IntegerArgumentType.integer(1, 100))
@@ -225,6 +250,11 @@ public class WaveDefenseCommand {
                     .then(CommandManager.literal("easy").executes(context -> executeArena(context.getSource(), Kit.SHIELD, Difficulty.EASY)))
                     .then(CommandManager.literal("medium").executes(context -> executeArena(context.getSource(), Kit.SHIELD, Difficulty.MEDIUM)))
                     .then(CommandManager.literal("hard").executes(context -> executeArena(context.getSource(), Kit.SHIELD, Difficulty.HARD))))
+                .then(CommandManager.literal("potion")
+                    .executes(context -> executeArena(context.getSource(), Kit.POTION, Difficulty.MEDIUM))
+                    .then(CommandManager.literal("easy").executes(context -> executeArena(context.getSource(), Kit.POTION, Difficulty.EASY)))
+                    .then(CommandManager.literal("medium").executes(context -> executeArena(context.getSource(), Kit.POTION, Difficulty.MEDIUM)))
+                    .then(CommandManager.literal("hard").executes(context -> executeArena(context.getSource(), Kit.POTION, Difficulty.HARD))))
             )
             .then(CommandManager.literal("leave")
                 .executes(context -> executeLeave(context.getSource()))
@@ -268,6 +298,11 @@ public class WaveDefenseCommand {
                     .then(CommandManager.literal("easy").executes(context -> executePlay(context.getSource(), Kit.SHIELD, Difficulty.EASY)))
                     .then(CommandManager.literal("medium").executes(context -> executePlay(context.getSource(), Kit.SHIELD, Difficulty.MEDIUM)))
                     .then(CommandManager.literal("hard").executes(context -> executePlay(context.getSource(), Kit.SHIELD, Difficulty.HARD))))
+                .then(CommandManager.literal("potion")
+                    .executes(context -> executePlay(context.getSource(), Kit.POTION, Difficulty.MEDIUM))
+                    .then(CommandManager.literal("easy").executes(context -> executePlay(context.getSource(), Kit.POTION, Difficulty.EASY)))
+                    .then(CommandManager.literal("medium").executes(context -> executePlay(context.getSource(), Kit.POTION, Difficulty.MEDIUM)))
+                    .then(CommandManager.literal("hard").executes(context -> executePlay(context.getSource(), Kit.POTION, Difficulty.HARD))))
             )
             .then(CommandManager.literal("stats")
                 .executes(context -> executeStats(context.getSource()))
@@ -287,6 +322,8 @@ public class WaveDefenseCommand {
                     .executes(context -> executeKit(context.getSource(), Kit.UHC)))
                 .then(CommandManager.literal("shield")
                     .executes(context -> executeKit(context.getSource(), Kit.SHIELD)))
+                .then(CommandManager.literal("potion")
+                    .executes(context -> executeKit(context.getSource(), Kit.POTION)))
             )
             .then(CommandManager.literal("survival")
                 .executes(context -> executeSurvivalHelp(context.getSource()))
@@ -297,11 +334,109 @@ public class WaveDefenseCommand {
                 .then(CommandManager.literal("crystal").executes(context -> executeSurvival(context.getSource(), Kit.CRYSTAL)))
                 .then(CommandManager.literal("uhc").executes(context -> executeSurvival(context.getSource(), Kit.UHC)))
                 .then(CommandManager.literal("shield").executes(context -> executeSurvival(context.getSource(), Kit.SHIELD)))
+                .then(CommandManager.literal("potion").executes(context -> executeSurvival(context.getSource(), Kit.POTION)))
             )
             .then(CommandManager.literal("exit")
                 .executes(context -> executeExitSurvival(context.getSource()))
             )
+            .then(CommandManager.literal("rematch")
+                .executes(context -> executeRematch(context.getSource()))
+            )
+            .then(CommandManager.literal("config")
+                .then(CommandManager.literal("reload")
+                    .requires(ServerCommandSource::isExecutedByPlayer)
+                    .executes(context -> executeConfigReload(context.getSource()))
+                )
+            )
         );
+    }
+
+    private static int executeRematch(ServerCommandSource source) {
+        if (!source.isExecutedByPlayer()) {
+            source.sendError(Text.literal("Nur Spieler können diesen Befehl nutzen!"));
+            return 0;
+        }
+
+        ServerPlayerEntity player = source.getPlayer();
+        ArenaManager arenaManager = WaveDefenseMod.getArenaManager();
+
+        if (arenaManager.isInArena(player)) {
+            source.sendError(Text.literal("Du bist bereits in einer Arena! Nutze /wd leave zuerst."));
+            return 0;
+        }
+
+        if (arenaManager.rematch(player)) {
+            return 1;
+        }
+        return 0;
+    }
+
+    private static int executeConfigReload(ServerCommandSource source) {
+        BotConfig.getInstance().reload();
+        source.sendFeedback(() -> Text.literal("Bot-Konfiguration neu geladen!")
+            .formatted(Formatting.GREEN), true);
+        return 1;
+    }
+
+    private static int executeHelp(ServerCommandSource source) {
+        source.sendFeedback(() -> Text.literal(""), false);
+        source.sendFeedback(() -> Text.literal("===============================")
+            .formatted(Formatting.GOLD), false);
+        source.sendFeedback(() -> Text.literal("      WAVE DEFENSE HILFE")
+            .formatted(Formatting.GOLD, Formatting.BOLD), false);
+        source.sendFeedback(() -> Text.literal("===============================")
+            .formatted(Formatting.GOLD), false);
+        source.sendFeedback(() -> Text.literal(""), false);
+
+        // Arena Commands
+        source.sendFeedback(() -> Text.literal("PvP Arena:").formatted(Formatting.AQUA, Formatting.BOLD), false);
+        source.sendFeedback(() -> Text.literal("  /wd arena <kit> [easy/medium/hard]")
+            .formatted(Formatting.YELLOW), false);
+        source.sendFeedback(() -> Text.literal("  /wd play <kit> [difficulty]")
+            .formatted(Formatting.YELLOW), false);
+        source.sendFeedback(() -> Text.literal("  /wd leave").append(Text.literal(" - Arena verlassen")
+            .formatted(Formatting.GRAY)), false);
+        source.sendFeedback(() -> Text.literal("  /wd rematch").append(Text.literal(" - Letztes Match wiederholen")
+            .formatted(Formatting.GRAY)), false);
+        source.sendFeedback(() -> Text.literal(""), false);
+
+        // Survival Commands
+        source.sendFeedback(() -> Text.literal("Survival Arena:").formatted(Formatting.AQUA, Formatting.BOLD), false);
+        source.sendFeedback(() -> Text.literal("  /wd survival <kit>").append(Text.literal(" - Survival starten")
+            .formatted(Formatting.GRAY)), false);
+        source.sendFeedback(() -> Text.literal("  /wd exit").append(Text.literal(" - Survival verlassen")
+            .formatted(Formatting.GRAY)), false);
+        source.sendFeedback(() -> Text.literal(""), false);
+
+        // Wave Defense Commands
+        source.sendFeedback(() -> Text.literal("Wave Defense:").formatted(Formatting.AQUA, Formatting.BOLD), false);
+        source.sendFeedback(() -> Text.literal("  /wd start [wellen]").append(Text.literal(" - Spiel starten")
+            .formatted(Formatting.GRAY)), false);
+        source.sendFeedback(() -> Text.literal("  /wd stop").append(Text.literal(" - Spiel stoppen")
+            .formatted(Formatting.GRAY)), false);
+        source.sendFeedback(() -> Text.literal(""), false);
+
+        // Other Commands
+        source.sendFeedback(() -> Text.literal("Andere:").formatted(Formatting.AQUA, Formatting.BOLD), false);
+        source.sendFeedback(() -> Text.literal("  /wd lobby").append(Text.literal(" - Zur Lobby teleportieren")
+            .formatted(Formatting.GRAY)), false);
+        source.sendFeedback(() -> Text.literal("  /wd stats").append(Text.literal(" - Statistiken anzeigen")
+            .formatted(Formatting.GRAY)), false);
+        source.sendFeedback(() -> Text.literal("  /wd kit <kit>").append(Text.literal(" - Kit erhalten")
+            .formatted(Formatting.GRAY)), false);
+        source.sendFeedback(() -> Text.literal("  /wd status").append(Text.literal(" - Aktueller Status")
+            .formatted(Formatting.GRAY)), false);
+        source.sendFeedback(() -> Text.literal("  /wd config reload").append(Text.literal(" - Config neu laden")
+            .formatted(Formatting.GRAY)), false);
+        source.sendFeedback(() -> Text.literal(""), false);
+
+        // Kits
+        source.sendFeedback(() -> Text.literal("Verfugbare Kits:").formatted(Formatting.AQUA, Formatting.BOLD), false);
+        source.sendFeedback(() -> Text.literal("  mace, sword, axe, bow, crystal, uhc, shield, potion")
+            .formatted(Formatting.GRAY), false);
+        source.sendFeedback(() -> Text.literal(""), false);
+
+        return 1;
     }
 
     private static int executeSurvivalHelp(ServerCommandSource source) {
@@ -309,7 +444,7 @@ public class WaveDefenseCommand {
             .formatted(Formatting.GOLD, Formatting.BOLD), false);
         source.sendFeedback(() -> Text.literal("/wd survival <kit>").formatted(Formatting.YELLOW), false);
         source.sendFeedback(() -> Text.literal(""), false);
-        source.sendFeedback(() -> Text.literal("Kits: mace, sword, axe, bow, crystal, uhc, shield")
+        source.sendFeedback(() -> Text.literal("Kits: mace, sword, axe, bow, crystal, uhc, shield, potion")
             .formatted(Formatting.AQUA), false);
         source.sendFeedback(() -> Text.literal(""), false);
         source.sendFeedback(() -> Text.literal("Beispiel: /wd survival sword")
@@ -476,6 +611,8 @@ public class WaveDefenseCommand {
             .append(Text.literal(" - UHC Loadout").formatted(Formatting.GRAY)), false);
         source.sendFeedback(() -> Text.literal("shield").formatted(Formatting.AQUA)
             .append(Text.literal(" - Sword + Shield Tank").formatted(Formatting.GRAY)), false);
+        source.sendFeedback(() -> Text.literal("potion").formatted(Formatting.AQUA)
+            .append(Text.literal(" - Splash Potions + Speed + Strength").formatted(Formatting.GRAY)), false);
         source.sendFeedback(() -> Text.literal(""), false);
         source.sendFeedback(() -> Text.literal("=== Schwierigkeiten ===")
             .formatted(Formatting.GOLD, Formatting.BOLD), false);

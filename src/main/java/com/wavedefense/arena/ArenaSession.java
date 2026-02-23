@@ -1,7 +1,11 @@
 package com.wavedefense.arena;
 
+import net.minecraft.entity.boss.BossBar;
+import net.minecraft.entity.boss.ServerBossBar;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 
@@ -28,6 +32,20 @@ public class ArenaSession {
     private BlockPos arenaCenter;
     private net.minecraft.registry.RegistryKey<net.minecraft.world.World> arenaWorld;
 
+    // Combat feedback
+    private ServerBossBar bossBar;
+    private int warmupTicks;
+    private boolean warmupComplete = false;
+    private long fightStartTime = 0;
+    private int playerHits = 0;
+    private int botHits = 0;
+    private float playerDamageDealt = 0;
+    private float playerDamageTaken = 0;
+
+    // Health tracking for hit detection
+    private float lastPlayerHealth = 20.0f;
+    private float lastBotHealth = 20.0f;
+
     // Constructor for new session from player
     public ArenaSession(ServerPlayerEntity player, Kit kit, Difficulty difficulty) {
         this.playerId = player.getUuid();
@@ -38,6 +56,7 @@ public class ArenaSession {
         this.originalPitch = player.getPitch();
         this.originalHealth = player.getHealth();
         this.originalFoodLevel = player.getHungerManager().getFoodLevel();
+        this.warmupTicks = BotConfig.getInstance().warmupTicks;
 
         // Save inventory (main inventory has 36 slots)
         this.originalInventory = new ArrayList<>();
@@ -70,6 +89,7 @@ public class ArenaSession {
         this.originalOffhand = offhand;
         this.originalHealth = health;
         this.originalFoodLevel = food;
+        this.warmupTicks = BotConfig.getInstance().warmupTicks;
     }
 
     public void restore(ServerPlayerEntity player) {
@@ -184,5 +204,106 @@ public class ArenaSession {
 
     public void setArenaWorld(net.minecraft.registry.RegistryKey<net.minecraft.world.World> arenaWorld) {
         this.arenaWorld = arenaWorld;
+    }
+
+    // Bossbar methods
+    public void createBossBar(ServerPlayerEntity player) {
+        bossBar = new ServerBossBar(
+            Text.literal(kit.getName() + " Bot").formatted(Formatting.RED, Formatting.BOLD),
+            BossBar.Color.RED,
+            BossBar.Style.PROGRESS
+        );
+        bossBar.addPlayer(player);
+    }
+
+    public void updateBossBar(float healthPercent, String botName) {
+        if (bossBar != null) {
+            bossBar.setPercent(Math.max(0, Math.min(1, healthPercent)));
+            bossBar.setName(Text.literal(botName + " ")
+                .formatted(Formatting.RED, Formatting.BOLD)
+                .append(Text.literal(String.format("%.0f%%", healthPercent * 100))
+                    .formatted(getHealthColor(healthPercent))));
+        }
+    }
+
+    private Formatting getHealthColor(float percent) {
+        if (percent > 0.5f) return Formatting.GREEN;
+        if (percent > 0.25f) return Formatting.YELLOW;
+        return Formatting.RED;
+    }
+
+    public void removeBossBar() {
+        if (bossBar != null) {
+            bossBar.clearPlayers();
+            bossBar = null;
+        }
+    }
+
+    // Warmup methods
+    public boolean isWarmupComplete() {
+        return warmupComplete;
+    }
+
+    public int getWarmupTicks() {
+        return warmupTicks;
+    }
+
+    public void tickWarmup() {
+        if (warmupTicks > 0) {
+            warmupTicks--;
+        }
+        if (warmupTicks <= 0 && !warmupComplete) {
+            warmupComplete = true;
+            fightStartTime = System.currentTimeMillis();
+        }
+    }
+
+    // Combat stats
+    public void addPlayerHit() { playerHits++; }
+    public void addBotHit() { botHits++; }
+    public void addPlayerDamageDealt(float damage) { playerDamageDealt += damage; }
+    public void addPlayerDamageTaken(float damage) { playerDamageTaken += damage; }
+
+    public int getPlayerHits() { return playerHits; }
+    public int getBotHits() { return botHits; }
+    public float getPlayerDamageDealt() { return playerDamageDealt; }
+    public float getPlayerDamageTaken() { return playerDamageTaken; }
+
+    // Track combat by comparing health changes
+    public void trackCombat(float currentPlayerHealth, float currentBotHealth) {
+        // Player took damage (bot hit player)
+        if (currentPlayerHealth < lastPlayerHealth) {
+            float damage = lastPlayerHealth - currentPlayerHealth;
+            addBotHit();
+            addPlayerDamageTaken(damage);
+        }
+
+        // Bot took damage (player hit bot)
+        if (currentBotHealth < lastBotHealth) {
+            float damage = lastBotHealth - currentBotHealth;
+            addPlayerHit();
+            addPlayerDamageDealt(damage);
+        }
+
+        lastPlayerHealth = currentPlayerHealth;
+        lastBotHealth = currentBotHealth;
+    }
+
+    public void initHealthTracking(float playerHealth, float botHealth) {
+        this.lastPlayerHealth = playerHealth;
+        this.lastBotHealth = botHealth;
+    }
+
+    public long getFightDuration() {
+        if (fightStartTime == 0) return 0;
+        return System.currentTimeMillis() - fightStartTime;
+    }
+
+    public String getFightDurationFormatted() {
+        long ms = getFightDuration();
+        long seconds = ms / 1000;
+        long minutes = seconds / 60;
+        seconds = seconds % 60;
+        return String.format("%d:%02d", minutes, seconds);
     }
 }

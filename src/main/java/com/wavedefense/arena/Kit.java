@@ -9,9 +9,11 @@ import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.potion.Potion;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.component.type.PotionContentsComponent;
 
 public enum Kit {
     MACE("Mace", "Mace + Wind Charges + Netherite"),
@@ -20,7 +22,8 @@ public enum Kit {
     BOW("Bow", "Power Bow + Arrows"),
     CRYSTAL("Crystal", "Crystals + Obsidian + Totems"),
     UHC("UHC", "Diamond Gear + Gapples + Buckets"),
-    SHIELD("Shield", "Sword + Shield + Diamond Armor");
+    SHIELD("Shield", "Sword + Shield + Diamond Armor"),
+    POTION("Potion", "Splash Potions + Speed + Strength");
 
     private final String name;
     private final String description;
@@ -303,11 +306,62 @@ public enum Kit {
                 player.equipStack(EquipmentSlot.FEET, boots);
                 player.equipStack(EquipmentSlot.OFFHAND, shield);
             }
+            case POTION -> {
+                // POTION KIT: Splash potions for PvP, light armor for mobility
+                ItemStack sword = new ItemStack(Items.DIAMOND_SWORD);
+                enchant(sword, serverPlayer, Enchantments.SHARPNESS, 5, Enchantments.UNBREAKING, 3);
+
+                player.getInventory().setStack(0, sword);
+
+                // Splash potions
+                player.getInventory().setStack(1, createSplashPotion(net.minecraft.potion.Potions.STRONG_HARMING, 16));
+                player.getInventory().setStack(2, createSplashPotion(net.minecraft.potion.Potions.STRONG_SLOWNESS, 8));
+                player.getInventory().setStack(3, createSplashPotion(net.minecraft.potion.Potions.STRONG_POISON, 8));
+                player.getInventory().setStack(4, createSplashPotion(net.minecraft.potion.Potions.WEAKNESS, 8));
+
+                // Drinkable buffs
+                player.getInventory().setStack(5, createPotion(net.minecraft.potion.Potions.STRONG_SWIFTNESS, 4));
+                player.getInventory().setStack(6, createPotion(net.minecraft.potion.Potions.STRONG_STRENGTH, 4));
+                player.getInventory().setStack(7, createPotion(net.minecraft.potion.Potions.STRONG_REGENERATION, 4));
+                player.getInventory().setStack(8, new ItemStack(Items.GOLDEN_APPLE, 32));
+
+                // Second row - more potions
+                player.getInventory().setStack(9, createSplashPotion(net.minecraft.potion.Potions.STRONG_HARMING, 16));
+                player.getInventory().setStack(10, createSplashPotion(net.minecraft.potion.Potions.STRONG_HARMING, 16));
+                player.getInventory().setStack(11, createPotion(net.minecraft.potion.Potions.FIRE_RESISTANCE, 4));
+
+                // Light armor - Chainmail for speed
+                ItemStack helmet = new ItemStack(Items.DIAMOND_HELMET);
+                enchant(helmet, serverPlayer, Enchantments.PROTECTION, 4, Enchantments.UNBREAKING, 3);
+                ItemStack chest = new ItemStack(Items.DIAMOND_CHESTPLATE);
+                enchant(chest, serverPlayer, Enchantments.PROTECTION, 4, Enchantments.UNBREAKING, 3);
+                ItemStack legs = new ItemStack(Items.DIAMOND_LEGGINGS);
+                enchant(legs, serverPlayer, Enchantments.PROTECTION, 4, Enchantments.UNBREAKING, 3);
+                ItemStack boots = new ItemStack(Items.DIAMOND_BOOTS);
+                enchant(boots, serverPlayer, Enchantments.PROTECTION, 4, Enchantments.SWIFT_SNEAK, 3, Enchantments.UNBREAKING, 3);
+
+                player.equipStack(EquipmentSlot.HEAD, helmet);
+                player.equipStack(EquipmentSlot.CHEST, chest);
+                player.equipStack(EquipmentSlot.LEGS, legs);
+                player.equipStack(EquipmentSlot.FEET, boots);
+            }
         }
 
         // Full health
         player.setHealth(player.getMaxHealth());
         player.getHungerManager().setFoodLevel(20);
+    }
+
+    private ItemStack createPotion(RegistryEntry<Potion> potion, int count) {
+        ItemStack stack = new ItemStack(Items.POTION, count);
+        stack.set(DataComponentTypes.POTION_CONTENTS, new PotionContentsComponent(potion));
+        return stack;
+    }
+
+    private ItemStack createSplashPotion(RegistryEntry<Potion> potion, int count) {
+        ItemStack stack = new ItemStack(Items.SPLASH_POTION, count);
+        stack.set(DataComponentTypes.POTION_CONTENTS, new PotionContentsComponent(potion));
+        return stack;
     }
 
     public void applyToBot(MobEntity bot) {
@@ -366,6 +420,13 @@ public enum Kit {
             case SHIELD -> {
                 bot.equipStack(EquipmentSlot.MAINHAND, new ItemStack(Items.DIAMOND_SWORD));
                 bot.equipStack(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+                bot.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.DIAMOND_HELMET));
+                bot.equipStack(EquipmentSlot.CHEST, new ItemStack(Items.DIAMOND_CHESTPLATE));
+                bot.equipStack(EquipmentSlot.LEGS, new ItemStack(Items.DIAMOND_LEGGINGS));
+                bot.equipStack(EquipmentSlot.FEET, new ItemStack(Items.DIAMOND_BOOTS));
+            }
+            case POTION -> {
+                bot.equipStack(EquipmentSlot.MAINHAND, new ItemStack(Items.DIAMOND_SWORD));
                 bot.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.DIAMOND_HELMET));
                 bot.equipStack(EquipmentSlot.CHEST, new ItemStack(Items.DIAMOND_CHESTPLATE));
                 bot.equipStack(EquipmentSlot.LEGS, new ItemStack(Items.DIAMOND_LEGGINGS));

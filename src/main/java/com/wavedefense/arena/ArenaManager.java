@@ -18,6 +18,12 @@ import net.minecraft.util.Formatting;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
+import net.minecraft.network.packet.s2c.play.SubtitleS2CPacket;
+import net.minecraft.network.packet.s2c.play.TitleS2CPacket;
+import net.minecraft.network.packet.s2c.play.TitleFadeS2CPacket;
+import net.minecraft.particle.ParticleTypes;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -25,6 +31,8 @@ import java.util.UUID;
 
 public class ArenaManager {
     private final Map<UUID, ArenaSession> activeSessions = new HashMap<>();
+    private final Map<UUID, Kit> lastPlayedKit = new HashMap<>();
+    private final Map<UUID, Difficulty> lastPlayedDifficulty = new HashMap<>();
 
     // Custom PvP Arena dimension
     public static final RegistryKey<World> ARENA_DIMENSION = RegistryKey.of(
@@ -53,6 +61,10 @@ public class ArenaManager {
         ArenaSession session = new ArenaSession(player, kit, difficulty);
         activeSessions.put(playerId, session);
 
+        // Save last played for rematch
+        lastPlayedKit.put(playerId, kit);
+        lastPlayedDifficulty.put(playerId, difficulty);
+
         // Get arena dimension
         ServerWorld arenaWorld = server.getWorld(ARENA_DIMENSION);
         if (arenaWorld == null) {
@@ -78,11 +90,24 @@ public class ArenaManager {
         // Spawn bot
         spawnBot(player, session, kit, difficulty, arenaPos, arenaWorld);
 
+        // Initialize combat tracking
+        session.initHealthTracking(player.getHealth(), difficulty.getHealth());
+
+        // Create bossbar for bot health
+        session.createBossBar(player);
+
+        // Show title
+        player.networkHandler.sendPacket(new TitleFadeS2CPacket(5, 40, 10));
+        player.networkHandler.sendPacket(new TitleS2CPacket(
+            Text.literal("⚔ " + kit.getName().toUpperCase() + " ⚔").formatted(Formatting.GOLD, Formatting.BOLD)));
+        player.networkHandler.sendPacket(new SubtitleS2CPacket(
+            Text.literal(difficulty.getName() + " Schwierigkeit").formatted(Formatting.YELLOW)));
+
         player.sendMessage(Text.literal("=== ARENA GESTARTET ===")
                 .formatted(Formatting.GOLD, Formatting.BOLD), false);
         player.sendMessage(Text.literal("Kit: " + kit.getName() + " | Schwierigkeit: " + difficulty.getName())
                 .formatted(Formatting.YELLOW), false);
-        player.sendMessage(Text.literal("Besiege den Bot um zu gewinnen!")
+        player.sendMessage(Text.literal("Warmup: 3 Sekunden...")
                 .formatted(Formatting.AQUA), false);
         player.sendMessage(Text.literal("Nutze /wd leave um die Arena zu verlassen")
                 .formatted(Formatting.GRAY), false);
@@ -209,6 +234,7 @@ public class ArenaManager {
             case CRYSTAL -> 7.0f;
             case UHC -> 7.0f;
             case SHIELD -> 7.0f;
+            case POTION -> 7.0f;
         };
     }
 
@@ -241,6 +267,9 @@ public class ArenaManager {
     }
 
     private void cleanupArena(ServerPlayerEntity player, ArenaSession session, MinecraftServer server, boolean teleportToLobby) {
+        // Remove bossbar
+        session.removeBossBar();
+
         // Get the correct world where arena was created
         ServerWorld arenaWorld = null;
         if (session.getArenaWorld() != null) {
@@ -340,10 +369,67 @@ public class ArenaManager {
                 continue;
             }
 
+            // Handle warmup phase
+            if (!session.isWarmupComplete()) {
+                session.tickWarmup();
+                int warmupTicks = session.getWarmupTicks();
+                int seconds = (warmupTicks / 20) + 1;
+
+                // Show countdown on actionbar
+                if (warmupTicks % 20 == 0 && warmupTicks > 0) {
+                    player.sendMessage(Text.literal("⏱ Kampf beginnt in " + seconds + "...").formatted(
+                        seconds == 3 ? Formatting.GREEN :
+                        seconds == 2 ? Formatting.YELLOW :
+                        Formatting.RED), true);
+
+                    // Play tick sound
+                    sessionWorld.playSound(null, player.getX(), player.getY(), player.getZ(),
+                        SoundEvents.BLOCK_NOTE_BLOCK_HAT.value(), SoundCategory.PLAYERS, 1.0f, 1.0f);
+                }
+
+                // Fight starts!
+                if (warmupTicks == 0) {
+                    player.networkHandler.sendPacket(new TitleFadeS2CPacket(0, 20, 10));
+                    player.networkHandler.sendPacket(new TitleS2CPacket(
+                        Text.literal("FIGHT!").formatted(Formatting.RED, Formatting.BOLD)));
+                    sessionWorld.playSound(null, player.getX(), player.getY(), player.getZ(),
+                        SoundEvents.ENTITY_ENDER_DRAGON_GROWL, SoundCategory.HOSTILE, 0.5f, 1.5f);
+                }
+
+                continue; // Don't tick bot AI during warmup
+            }
+
             // Tick bot AI
             BotAI botAI = session.getBotAI();
             if (botAI != null) {
                 botAI.tick();
+            }
+
+            // Update bossbar with bot health and track combat
+            if (session.getBotId() != null) {
+                var botEntity = sessionWorld.getEntity(session.getBotId());
+                if (botEntity instanceof ZombieEntity bot && bot.isAlive()) {
+                    float healthPercent = bot.getHealth() / bot.getMaxHealth();
+                    session.updateBossBar(healthPercent, session.getKit().getName() + " Bot");
+
+                    // Track combat hits and damage
+                    session.trackCombat(player.getHealth(), bot.getHealth());
+
+                    // Show combat info on actionbar every second
+                    if (server.getTicks() % 20 == 0) {
+                        BotAI ai = session.getBotAI();
+                        int combo = ai != null ? ai.getComboCount() : 0;
+                        String comboText = combo > 0 ? " Combo: " + combo + "x" : "";
+
+                        player.sendMessage(Text.literal("")
+                            .append(Text.literal("Treffer: ").formatted(Formatting.GREEN))
+                            .append(Text.literal(String.valueOf(session.getPlayerHits())).formatted(Formatting.WHITE))
+                            .append(Text.literal(" | ").formatted(Formatting.GRAY))
+                            .append(Text.literal("Erhalten: ").formatted(Formatting.RED))
+                            .append(Text.literal(String.valueOf(session.getBotHits())).formatted(Formatting.WHITE))
+                            .append(Text.literal(comboText).formatted(Formatting.GOLD)), true);
+                    }
+                }
             }
 
             // Check if bot is dead
@@ -355,10 +441,30 @@ public class ArenaManager {
 
             if (botDead) {
                 // Player won!
-                player.sendMessage(Text.literal("=== SIEG! ===")
+                player.networkHandler.sendPacket(new TitleFadeS2CPacket(5, 60, 20));
+                player.networkHandler.sendPacket(new TitleS2CPacket(
+                    Text.literal("⚔ SIEG! ⚔").formatted(Formatting.GOLD, Formatting.BOLD)));
+                player.networkHandler.sendPacket(new SubtitleS2CPacket(
+                    Text.literal(session.getKit().getName() + " Bot besiegt!").formatted(Formatting.GREEN)));
+
+                // Show combat stats
+                player.sendMessage(Text.literal(""), false);
+                player.sendMessage(Text.literal("=== KAMPFSTATISTIKEN ===")
                         .formatted(Formatting.GOLD, Formatting.BOLD), false);
-                player.sendMessage(Text.literal("Du hast den " + session.getKit().getName() + " Bot besiegt!")
+                player.sendMessage(Text.literal("Kampfdauer: " + session.getFightDurationFormatted())
+                        .formatted(Formatting.YELLOW), false);
+                player.sendMessage(Text.literal("Deine Treffer: " + session.getPlayerHits())
                         .formatted(Formatting.GREEN), false);
+                player.sendMessage(Text.literal("Erhaltene Treffer: " + session.getBotHits())
+                        .formatted(Formatting.RED), false);
+                player.sendMessage(Text.literal(String.format("Schaden ausgeteilt: %.1f ❤", session.getPlayerDamageDealt() / 2))
+                        .formatted(Formatting.GREEN), false);
+                player.sendMessage(Text.literal(String.format("Schaden erhalten: %.1f ❤", session.getPlayerDamageTaken() / 2))
+                        .formatted(Formatting.RED), false);
+                player.sendMessage(Text.literal(""), false);
+
+                sessionWorld.playSound(null, player.getX(), player.getY(), player.getZ(),
+                    SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, SoundCategory.PLAYERS, 1.0f, 1.0f);
 
                 // Track stats
                 PlayerStats.addWin(server, playerId);
@@ -370,8 +476,17 @@ public class ArenaManager {
 
             // Check if player died
             if (player.isDead()) {
+                // Show defeat screen
+                player.sendMessage(Text.literal(""), false);
                 player.sendMessage(Text.literal("=== NIEDERLAGE ===")
                         .formatted(Formatting.RED, Formatting.BOLD), false);
+                player.sendMessage(Text.literal("Kampfdauer: " + session.getFightDurationFormatted())
+                        .formatted(Formatting.YELLOW), false);
+                player.sendMessage(Text.literal("Deine Treffer: " + session.getPlayerHits())
+                        .formatted(Formatting.GREEN), false);
+                player.sendMessage(Text.literal("Erhaltene Treffer: " + session.getBotHits())
+                        .formatted(Formatting.RED), false);
+                player.sendMessage(Text.literal(""), false);
 
                 // Track stats
                 PlayerStats.addLoss(server, playerId);
@@ -423,6 +538,28 @@ public class ArenaManager {
 
     public ArenaSession getSession(ServerPlayerEntity player) {
         return activeSessions.get(player.getUuid());
+    }
+
+    public boolean rematch(ServerPlayerEntity player) {
+        UUID playerId = player.getUuid();
+        Kit kit = lastPlayedKit.get(playerId);
+        Difficulty difficulty = lastPlayedDifficulty.get(playerId);
+
+        if (kit == null || difficulty == null) {
+            player.sendMessage(Text.literal("Keine vorherige Arena gefunden! Nutze /wd arena <kit>")
+                    .formatted(Formatting.RED), false);
+            return false;
+        }
+
+        return startArena(player, kit, difficulty);
+    }
+
+    public Kit getLastPlayedKit(UUID playerId) {
+        return lastPlayedKit.get(playerId);
+    }
+
+    public Difficulty getLastPlayedDifficulty(UUID playerId) {
+        return lastPlayedDifficulty.get(playerId);
     }
 
     public void handleRespawn(ServerPlayerEntity player) {
