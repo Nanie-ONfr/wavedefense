@@ -11,6 +11,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -107,35 +108,46 @@ public class WaveManager {
     }
 
     public void tick(MinecraftServer server) {
-        for (Map.Entry<UUID, GameSession> entry : new HashMap<>(activeSessions).entrySet()) {
+        List<UUID> toRemove = null;
+
+        for (Map.Entry<UUID, GameSession> entry : activeSessions.entrySet()) {
             UUID playerId = entry.getKey();
             GameSession session = entry.getValue();
 
             ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
             if (player == null) {
-                activeSessions.remove(playerId);
+                if (toRemove == null) toRemove = new java.util.ArrayList<>();
+                toRemove.add(playerId);
                 continue;
             }
 
             ServerWorld world = getPlayerWorld(player);
-            updateSession(player, world, session);
+            if (shouldRemoveSession(player, world, session)) {
+                if (toRemove == null) toRemove = new java.util.ArrayList<>();
+                toRemove.add(playerId);
+            }
+        }
+
+        if (toRemove != null) {
+            for (UUID id : toRemove) {
+                activeSessions.remove(id);
+            }
         }
     }
 
-    private void updateSession(ServerPlayerEntity player, ServerWorld world, GameSession session) {
+    private boolean shouldRemoveSession(ServerPlayerEntity player, ServerWorld world, GameSession session) {
         switch (session.getState()) {
             case WAVE_ACTIVE:
                 checkWaveCompletion(player, world, session);
-                break;
+                return false;
             case BETWEEN_WAVES:
                 handleBetweenWaves(player, session);
-                break;
+                return false;
             case GAME_WON:
             case GAME_OVER:
-                activeSessions.remove(player.getUuid());
-                break;
+                return true;
             default:
-                break;
+                return false;
         }
     }
 

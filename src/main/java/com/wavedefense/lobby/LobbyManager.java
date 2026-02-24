@@ -199,9 +199,10 @@ public class LobbyManager {
     public Difficulty cycleDifficulty(UUID playerId) {
         Difficulty current = getSelectedDifficulty(playerId);
         Difficulty next = switch (current) {
+            case PRACTICE -> Difficulty.EASY;
             case EASY -> Difficulty.MEDIUM;
             case MEDIUM -> Difficulty.HARD;
-            case HARD -> Difficulty.EASY;
+            case HARD -> Difficulty.PRACTICE;
         };
         selectedDifficulties.put(playerId, next);
         return next;

@@ -14,7 +14,7 @@ import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.Vec3d;
 
-import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Advanced PvP AI for arena bots - mimics real player behavior
@@ -25,7 +25,11 @@ public class BotAI {
     private ServerPlayerEntity target;
     private final Kit kit;
     private final Difficulty difficulty;
-    private final Random random = new Random();
+
+    // Cached difficulty values (computed once, used every tick)
+    private final double movementSpeed;
+    private final double damageMultiplier;
+    private final int reactionChance;
 
     // Cooldowns (in ticks)
     private int attackCooldown = 0;
@@ -79,7 +83,18 @@ public class BotAI {
         this.target = target;
         this.kit = kit;
         this.difficulty = difficulty;
-        this.currentPattern = random.nextInt(STRAFE_PATTERNS.length);
+
+        // Cache difficulty values to avoid recomputing every tick
+        this.movementSpeed = difficulty.getMovementSpeed();
+        this.damageMultiplier = difficulty.getDamageMultiplier();
+        this.reactionChance = switch (difficulty) {
+            case PRACTICE -> 70;
+            case EASY -> 35;
+            case MEDIUM -> 12;
+            case HARD -> 3;
+        };
+
+        this.currentPattern = ThreadLocalRandom.current().nextInt(STRAFE_PATTERNS.length);
     }
 
     public void setTarget(ServerPlayerEntity newTarget) {
@@ -92,6 +107,9 @@ public class BotAI {
 
         // Keep target set
         bot.setTarget(target);
+
+        // Make bot look at target (important for Minecraft melee hit detection)
+        bot.getLookControl().lookAt(target, 30.0f, 30.0f);
 
         // Track target movement for prediction
         Vec3d currentPos = new Vec3d(target.getX(), target.getY(), target.getZ());
@@ -108,8 +126,8 @@ public class BotAI {
         }
 
         // Random reaction delays based on difficulty
-        if (random.nextInt(100) < getReactionChance()) {
-            reactionDelay = random.nextInt(difficulty.getReactionDelayTicks() / 2);
+        if (ThreadLocalRandom.current().nextInt(100) < getReactionChance()) {
+            reactionDelay = ThreadLocalRandom.current().nextInt(difficulty.getReactionDelayTicks() / 2);
             return;
         }
 
@@ -166,11 +184,7 @@ public class BotAI {
     }
 
     private int getReactionChance() {
-        return switch (difficulty) {
-            case EASY -> 35;
-            case MEDIUM -> 12;
-            case HARD -> 3;
-        };
+        return reactionChance;
     }
 
     private void performDodge(double distance) {
@@ -184,15 +198,16 @@ public class BotAI {
         ).normalize();
 
         double dodgeChance = switch (difficulty) {
+            case PRACTICE -> 0.0;
             case EASY -> 0.1;
             case MEDIUM -> 0.25;
             case HARD -> 0.45;
         };
 
-        if (random.nextDouble() < dodgeChance) {
+        if (ThreadLocalRandom.current().nextDouble() < dodgeChance) {
             // Strafe dodge
             Vec3d strafeVec = new Vec3d(-awayFromTarget.z, 0, awayFromTarget.x);
-            int dir = random.nextBoolean() ? 1 : -1;
+            int dir = ThreadLocalRandom.current().nextBoolean() ? 1 : -1;
             bot.setVelocity(
                 strafeVec.x * 0.4 * dir + awayFromTarget.x * 0.2,
                 0.1,
@@ -209,6 +224,7 @@ public class BotAI {
     private boolean shouldHeal() {
         float healthPercent = bot.getHealth() / bot.getMaxHealth();
         return switch (difficulty) {
+            case PRACTICE -> false;
             case EASY -> healthPercent < 0.25;
             case MEDIUM -> healthPercent < 0.35;
             case HARD -> healthPercent < 0.5;
@@ -218,6 +234,7 @@ public class BotAI {
     private void performHeal() {
         // Simulate eating a gapple
         float healAmount = switch (difficulty) {
+            case PRACTICE -> 2.0f;
             case EASY -> 4.0f;
             case MEDIUM -> 6.0f;
             case HARD -> 8.0f;
@@ -234,9 +251,10 @@ public class BotAI {
             SoundEvents.ENTITY_PLAYER_BURP, SoundCategory.HOSTILE, 1.0f, 1.0f);
 
         healCooldown = switch (difficulty) {
-            case EASY -> 200;  // 10 seconds
-            case MEDIUM -> 140; // 7 seconds
-            case HARD -> 80;   // 4 seconds
+            case PRACTICE -> 400; // 20 seconds
+            case EASY -> 200;     // 10 seconds
+            case MEDIUM -> 140;   // 7 seconds
+            case HARD -> 80;      // 4 seconds
         };
     }
 
@@ -268,8 +286,8 @@ public class BotAI {
             strafeDirection = pattern[patternIndex];
 
             // Occasionally switch patterns
-            if (random.nextFloat() < 0.05f) {
-                currentPattern = random.nextInt(STRAFE_PATTERNS.length);
+            if (ThreadLocalRandom.current().nextFloat() < 0.05f) {
+                currentPattern = ThreadLocalRandom.current().nextInt(STRAFE_PATTERNS.length);
             }
         }
 
@@ -278,7 +296,7 @@ public class BotAI {
 
         // Retreating behavior
         if (isRetreating && distance < 10.0) {
-            double speed = difficulty.getMovementSpeed() * 0.85;
+            double speed = movementSpeed * 0.85;
             bot.setVelocity(
                 -toTarget.x * speed + strafeVec.x * speed * 0.4,
                 bot.getVelocity().y,
@@ -290,15 +308,16 @@ public class BotAI {
 
         // Approach with strafing
         if (distance > 3.0 && distance < 12.0) {
-            double speed = difficulty.getMovementSpeed();
+            double speed = movementSpeed;
             double strafeAmount = switch (difficulty) {
+                case PRACTICE -> 0.1;
                 case EASY -> 0.25;
                 case MEDIUM -> 0.4;
                 case HARD -> 0.55;
             };
 
             // Add some randomness to movement
-            double noise = (random.nextDouble() - 0.5) * 0.1;
+            double noise = (ThreadLocalRandom.current().nextDouble() - 0.5) * 0.1;
 
             bot.setVelocity(
                 toTarget.x * speed + strafeVec.x * speed * strafeAmount + noise,
@@ -310,7 +329,7 @@ public class BotAI {
 
         // Circle strafing when close
         if (distance < 3.0 && distance > 1.5) {
-            double speed = difficulty.getMovementSpeed() * 0.65;
+            double speed = movementSpeed * 0.65;
             bot.setVelocity(
                 strafeVec.x * speed + toTarget.x * speed * 0.2,
                 bot.getVelocity().y,
@@ -326,12 +345,13 @@ public class BotAI {
             // Crit jump
             boolean shouldJump = bot.isOnGround() && jumpCooldown == 0;
             double critChance = switch (difficulty) {
+                case PRACTICE -> 0.05;
                 case EASY -> 0.2;
                 case MEDIUM -> 0.4;
                 case HARD -> 0.6;
             };
 
-            if (shouldJump && random.nextDouble() < critChance) {
+            if (shouldJump && ThreadLocalRandom.current().nextDouble() < critChance) {
                 bot.setVelocity(bot.getVelocity().x, 0.42, bot.getVelocity().z);
                 bot.velocityDirty = true;
                 jumpCooldown = 12;
@@ -342,14 +362,16 @@ public class BotAI {
 
             // W-tap / Sprint reset for extra knockback
             double wtapChance = switch (difficulty) {
+                case PRACTICE -> 0.0;
                 case EASY -> 0.15;
                 case MEDIUM -> 0.35;
                 case HARD -> 0.55;
             };
 
-            if (sprintResetCooldown == 0 && random.nextDouble() < wtapChance && comboCount > 0) {
+            if (sprintResetCooldown == 0 && ThreadLocalRandom.current().nextDouble() < wtapChance && comboCount > 0) {
                 Vec3d kb = new Vec3d(target.getX() - bot.getX(), 0, target.getZ() - bot.getZ()).normalize();
                 double kbStrength = switch (difficulty) {
+                    case PRACTICE -> 0.2;
                     case EASY -> 0.35;
                     case MEDIUM -> 0.45;
                     case HARD -> 0.55;
@@ -373,11 +395,12 @@ public class BotAI {
             // Always try to crit with axe
             if (bot.isOnGround() && jumpCooldown == 0) {
                 double critChance = switch (difficulty) {
+                    case PRACTICE -> 0.1;
                     case EASY -> 0.35;
                     case MEDIUM -> 0.55;
                     case HARD -> 0.75;
                 };
-                if (random.nextDouble() < critChance) {
+                if (ThreadLocalRandom.current().nextDouble() < critChance) {
                     bot.setVelocity(bot.getVelocity().x, 0.42, bot.getVelocity().z);
                     bot.velocityDirty = true;
                     jumpCooldown = 18;
@@ -413,6 +436,7 @@ public class BotAI {
             ).normalize();
 
             double launchPower = switch (difficulty) {
+                case PRACTICE -> 0.5;
                 case EASY -> 0.8;
                 case MEDIUM -> 1.0;
                 case HARD -> 1.3;
@@ -421,6 +445,7 @@ public class BotAI {
             bot.setVelocity(toTarget.x * 0.5, launchPower, toTarget.z * 0.5);
             bot.velocityDirty = true;
             windChargeCooldown = switch (difficulty) {
+                case PRACTICE -> 200;
                 case EASY -> 120;
                 case MEDIUM -> 90;
                 case HARD -> 60;
@@ -439,7 +464,7 @@ public class BotAI {
             preparingSmash = false;
             if (distance < 6.0) {
                 double fallDist = Math.max(0, fallStartY - bot.getY());
-                float damage = (float) ((8.0 + fallDist * 2.5) * difficulty.getDamageMultiplier());
+                float damage = (float) ((8.0 + fallDist * 2.5) * damageMultiplier);
                 damage = Math.min(damage, 28.0f);
 
                 bot.swingHand(Hand.MAIN_HAND);
@@ -479,6 +504,7 @@ public class BotAI {
             drawTicks++;
 
             int drawTime = switch (difficulty) {
+                case PRACTICE -> 40;
                 case EASY -> 28;
                 case MEDIUM -> 20;
                 case HARD -> 14;
@@ -489,6 +515,7 @@ public class BotAI {
                 drawTicks = 0;
                 isDrawing = false;
                 specialCooldown = switch (difficulty) {
+                    case PRACTICE -> 60;
                     case EASY -> 35;
                     case MEDIUM -> 22;
                     case HARD -> 12;
@@ -511,7 +538,7 @@ public class BotAI {
         if (distance > 2.0 && distance < 8.0 && specialCooldown == 0) {
             ServerWorld world = (ServerWorld) bot.getEntityWorld();
 
-            float damage = (float) (9.0 * difficulty.getDamageMultiplier());
+            float damage = (float) (9.0 * damageMultiplier);
 
             // Self damage (but less)
             float selfDamage = damage * 0.25f;
@@ -535,6 +562,7 @@ public class BotAI {
                 SoundEvents.ENTITY_GENERIC_EXPLODE, SoundCategory.HOSTILE, 1.0f, 1.0f);
 
             specialCooldown = switch (difficulty) {
+                case PRACTICE -> 80;
                 case EASY -> 55;
                 case MEDIUM -> 35;
                 case HARD -> 20;
@@ -554,6 +582,7 @@ public class BotAI {
         if (distance > 5.0 && distance < 14.0 && specialCooldown == 0) {
             Vec3d pullDir = new Vec3d(bot.getX() - target.getX(), 0.25, bot.getZ() - target.getZ()).normalize();
             double pullStrength = switch (difficulty) {
+                case PRACTICE -> 0.2;
                 case EASY -> 0.35;
                 case MEDIUM -> 0.5;
                 case HARD -> 0.65;
@@ -571,7 +600,7 @@ public class BotAI {
 
         // Standard sword combat with combos
         if (distance < 3.5 && attackCooldown == 0) {
-            if (bot.isOnGround() && jumpCooldown == 0 && random.nextFloat() < 0.35f) {
+            if (bot.isOnGround() && jumpCooldown == 0 && ThreadLocalRandom.current().nextFloat() < 0.35f) {
                 bot.setVelocity(bot.getVelocity().x, 0.42, bot.getVelocity().z);
                 bot.velocityDirty = true;
                 jumpCooldown = 14;
@@ -603,6 +632,7 @@ public class BotAI {
         if (distance > 4.0 && distance < 12.0 && attackCooldown == 0) {
             // Predict target position
             double predictionMultiplier = switch (difficulty) {
+                case PRACTICE -> 0.1;
                 case EASY -> 0.3;
                 case MEDIUM -> 0.6;
                 case HARD -> 0.85;
@@ -616,20 +646,22 @@ public class BotAI {
             );
 
             // Simulate harming potion damage
-            float damage = (float) (6.0 * difficulty.getDamageMultiplier());
+            float damage = (float) (6.0 * damageMultiplier);
 
             // Apply damage and slowness effect
             target.damage(world, world.getDamageSources().magic(), damage);
 
             // Random debuff
             double debuffChance = switch (difficulty) {
+                case PRACTICE -> 0.0;
                 case EASY -> 0.2;
                 case MEDIUM -> 0.35;
                 case HARD -> 0.5;
             };
 
-            if (random.nextDouble() < debuffChance) {
+            if (ThreadLocalRandom.current().nextDouble() < debuffChance) {
                 int duration = switch (difficulty) {
+                    case PRACTICE -> 20;
                     case EASY -> 60;
                     case MEDIUM -> 100;
                     case HARD -> 160;
@@ -644,6 +676,7 @@ public class BotAI {
                 SoundEvents.ENTITY_SPLASH_POTION_BREAK, SoundCategory.HOSTILE, 1.0f, 1.0f);
 
             attackCooldown = switch (difficulty) {
+                case PRACTICE -> 80;
                 case EASY -> 50;
                 case MEDIUM -> 35;
                 case HARD -> 22;
@@ -652,7 +685,7 @@ public class BotAI {
 
         // Melee when close
         if (distance < 3.5 && attackCooldown == 0) {
-            if (bot.isOnGround() && jumpCooldown == 0 && random.nextFloat() < 0.3f) {
+            if (bot.isOnGround() && jumpCooldown == 0 && ThreadLocalRandom.current().nextFloat() < 0.3f) {
                 bot.setVelocity(bot.getVelocity().x, 0.42, bot.getVelocity().z);
                 bot.velocityDirty = true;
                 jumpCooldown = 12;
@@ -669,6 +702,7 @@ public class BotAI {
         if (distance < 5.0 && !isBlocking && blockCooldown == 0) {
             // Block when target is likely to attack
             double blockChance = switch (difficulty) {
+                case PRACTICE -> 0.05;
                 case EASY -> 0.15;
                 case MEDIUM -> 0.3;
                 case HARD -> 0.5;
@@ -679,9 +713,10 @@ public class BotAI {
                 blockChance *= 2;
             }
 
-            if (random.nextDouble() < blockChance) {
+            if (ThreadLocalRandom.current().nextDouble() < blockChance) {
                 isBlocking = true;
                 blockCooldown = switch (difficulty) {
+                    case PRACTICE -> 80;
                     case EASY -> 50;
                     case MEDIUM -> 35;
                     case HARD -> 25;
@@ -697,7 +732,7 @@ public class BotAI {
         // Counter attack after blocking
         if (!isBlocking && distance < 3.5 && attackCooldown == 0) {
             // Shield bash
-            if (random.nextFloat() < 0.25f) {
+            if (ThreadLocalRandom.current().nextFloat() < 0.25f) {
                 Vec3d kb = new Vec3d(target.getX() - bot.getX(), 0, target.getZ() - bot.getZ()).normalize();
                 target.addVelocity(kb.x * 0.6, 0.35, kb.z * 0.6);
                 target.velocityDirty = true;
@@ -711,7 +746,7 @@ public class BotAI {
     private void performMeleeAttack(float baseDamage, double distance) {
         bot.swingHand(Hand.MAIN_HAND);
 
-        float damage = (float) (baseDamage * difficulty.getDamageMultiplier());
+        float damage = (float) (baseDamage * damageMultiplier);
 
         // Crit bonus if falling
         if (bot.getVelocity().y < -0.08) {
@@ -739,6 +774,7 @@ public class BotAI {
 
         // Prediction based on difficulty
         double predictionMultiplier = switch (difficulty) {
+            case PRACTICE -> 0.1;
             case EASY -> 0.4;
             case MEDIUM -> 0.75;
             case HARD -> 1.0;
@@ -755,6 +791,7 @@ public class BotAI {
 
         // Inaccuracy based on difficulty
         double inaccuracy = switch (difficulty) {
+            case PRACTICE -> 12.0;
             case EASY -> 7.0;
             case MEDIUM -> 3.5;
             case HARD -> 1.0;
@@ -767,7 +804,7 @@ public class BotAI {
         // Calculate proper arc
         double yOffset = 0.1 + (dist * 0.008);
         arrow.setVelocity(dir.x, dir.y + yOffset, dir.z, 2.8f, (float) inaccuracy);
-        arrow.setDamage(6.0 * difficulty.getDamageMultiplier());
+        arrow.setDamage(6.0 * damageMultiplier);
 
         world.spawnEntity(arrow);
 

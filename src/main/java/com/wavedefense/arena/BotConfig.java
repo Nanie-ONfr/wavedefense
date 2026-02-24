@@ -20,21 +20,25 @@ public class BotConfig {
     private static BotConfig INSTANCE;
 
     // Health settings
+    public float practiceHealthMultiplier = 2.5f;
     public float easyHealthMultiplier = 1.0f;
     public float mediumHealthMultiplier = 1.0f;
     public float hardHealthMultiplier = 1.0f;
 
     // Damage settings
+    public float practiceDamageMultiplier = 0.0f;
     public float easyDamageMultiplier = 0.5f;
     public float mediumDamageMultiplier = 0.75f;
     public float hardDamageMultiplier = 1.0f;
 
     // Speed settings
+    public float practiceSpeedMultiplier = 0.7f;
     public float easySpeedMultiplier = 0.8f;
     public float mediumSpeedMultiplier = 1.0f;
     public float hardSpeedMultiplier = 1.2f;
 
     // Reaction time (lower = faster reactions)
+    public int practiceReactionTicks = 60;
     public int easyReactionTicks = 50;
     public int mediumReactionTicks = 30;
     public int hardReactionTicks = 15;
@@ -48,6 +52,7 @@ public class BotConfig {
     public int warmupTicks = 60;
 
     // Bot attack range
+    public double practiceAttackRange = 3.0;
     public double easyAttackRange = 3.0;
     public double mediumAttackRange = 3.0;
     public double hardAttackRange = 10.0;
@@ -99,6 +104,7 @@ public class BotConfig {
     // Helper methods to get multipliers based on difficulty
     public float getHealthMultiplier(Difficulty difficulty) {
         return switch (difficulty) {
+            case PRACTICE -> practiceHealthMultiplier;
             case EASY -> easyHealthMultiplier;
             case MEDIUM -> mediumHealthMultiplier;
             case HARD -> hardHealthMultiplier;
@@ -107,6 +113,7 @@ public class BotConfig {
 
     public float getDamageMultiplier(Difficulty difficulty) {
         return switch (difficulty) {
+            case PRACTICE -> practiceDamageMultiplier;
             case EASY -> easyDamageMultiplier;
             case MEDIUM -> mediumDamageMultiplier;
             case HARD -> hardDamageMultiplier;
@@ -115,6 +122,7 @@ public class BotConfig {
 
     public float getSpeedMultiplier(Difficulty difficulty) {
         return switch (difficulty) {
+            case PRACTICE -> practiceSpeedMultiplier;
             case EASY -> easySpeedMultiplier;
             case MEDIUM -> mediumSpeedMultiplier;
             case HARD -> hardSpeedMultiplier;
@@ -123,6 +131,7 @@ public class BotConfig {
 
     public int getReactionTicks(Difficulty difficulty) {
         return switch (difficulty) {
+            case PRACTICE -> practiceReactionTicks;
             case EASY -> easyReactionTicks;
             case MEDIUM -> mediumReactionTicks;
             case HARD -> hardReactionTicks;
@@ -131,6 +140,7 @@ public class BotConfig {
 
     public double getAttackRange(Difficulty difficulty) {
         return switch (difficulty) {
+            case PRACTICE -> practiceAttackRange;
             case EASY -> easyAttackRange;
             case MEDIUM -> mediumAttackRange;
             case HARD -> hardAttackRange;

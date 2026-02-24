@@ -26,6 +26,7 @@ import net.minecraft.network.packet.s2c.play.TitleFadeS2CPacket;
 import net.minecraft.particle.ParticleTypes;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -337,33 +338,39 @@ public class ArenaManager {
         player.velocityDirty = true;
     }
 
+    private int endermanCleanupTimer = 0;
+
     public void tick(ServerWorld world) {
         MinecraftServer server = world.getServer();
 
-        // Remove endermen from active arenas
-        for (ArenaSession session : activeSessions.values()) {
-            if (session.getArenaWorld() != null && session.getArenaWorld().equals(world.getRegistryKey())) {
-                BlockPos center = session.getArenaCenter();
-                if (center != null) {
-                    // Remove any endermen within arena bounds (radius 25)
-                    world.getEntitiesByType(EntityType.ENDERMAN,
-                            entity -> entity.squaredDistanceTo(center.getX(), center.getY(), center.getZ()) < 625)
-                            .forEach(EndermanEntity::discard);
+        // Remove endermen from active arenas (every 2 seconds instead of every tick)
+        endermanCleanupTimer++;
+        if (endermanCleanupTimer >= 40) {
+            endermanCleanupTimer = 0;
+            for (ArenaSession session : activeSessions.values()) {
+                if (session.getArenaWorld() != null && session.getArenaWorld().equals(world.getRegistryKey())) {
+                    BlockPos center = session.getArenaCenter();
+                    if (center != null) {
+                        world.getEntitiesByType(EntityType.ENDERMAN,
+                                entity -> entity.squaredDistanceTo(center.getX(), center.getY(), center.getZ()) < 625)
+                                .forEach(EndermanEntity::discard);
+                    }
                 }
             }
         }
 
-        for (Map.Entry<UUID, ArenaSession> entry : new HashMap<>(activeSessions).entrySet()) {
+        // Collect sessions to remove after iteration (avoids ConcurrentModificationException without copying)
+        List<UUID> toRemove = null;
+
+        for (Map.Entry<UUID, ArenaSession> entry : activeSessions.entrySet()) {
             UUID playerId = entry.getKey();
             ArenaSession session = entry.getValue();
 
             ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
             if (player == null) {
-                // Player disconnected - session stays in memory and on disk
                 continue;
             }
 
-            // Only tick in the arena world
             ServerWorld sessionWorld = server.getWorld(session.getArenaWorld());
             if (sessionWorld == null || sessionWorld != world) {
                 continue;
@@ -375,19 +382,16 @@ public class ArenaManager {
                 int warmupTicks = session.getWarmupTicks();
                 int seconds = (warmupTicks / 20) + 1;
 
-                // Show countdown on actionbar
                 if (warmupTicks % 20 == 0 && warmupTicks > 0) {
                     player.sendMessage(Text.literal("⏱ Kampf beginnt in " + seconds + "...").formatted(
                         seconds == 3 ? Formatting.GREEN :
                         seconds == 2 ? Formatting.YELLOW :
                         Formatting.RED), true);
 
-                    // Play tick sound
                     sessionWorld.playSound(null, player.getX(), player.getY(), player.getZ(),
                         SoundEvents.BLOCK_NOTE_BLOCK_HAT.value(), SoundCategory.PLAYERS, 1.0f, 1.0f);
                 }
 
-                // Fight starts!
                 if (warmupTicks == 0) {
                     player.networkHandler.sendPacket(new TitleFadeS2CPacket(0, 20, 10));
                     player.networkHandler.sendPacket(new TitleS2CPacket(
@@ -396,7 +400,7 @@ public class ArenaManager {
                         SoundEvents.ENTITY_ENDER_DRAGON_GROWL, SoundCategory.HOSTILE, 0.5f, 1.5f);
                 }
 
-                continue; // Don't tick bot AI during warmup
+                continue;
             }
 
             // Tick bot AI
@@ -405,14 +409,14 @@ public class ArenaManager {
                 botAI.tick();
             }
 
-            // Update bossbar with bot health and track combat
+            // Single entity lookup for bot (was doing 2 lookups before)
+            boolean botDead = true;
             if (session.getBotId() != null) {
                 var botEntity = sessionWorld.getEntity(session.getBotId());
                 if (botEntity instanceof ZombieEntity bot && bot.isAlive()) {
+                    botDead = false;
                     float healthPercent = bot.getHealth() / bot.getMaxHealth();
                     session.updateBossBar(healthPercent, session.getKit().getName() + " Bot");
-
-                    // Track combat hits and damage
                     session.trackCombat(player.getHealth(), bot.getHealth());
 
                     // Show combat info on actionbar every second
@@ -430,13 +434,6 @@ public class ArenaManager {
                             .append(Text.literal(comboText).formatted(Formatting.GOLD)), true);
                     }
                 }
-            }
-
-            // Check if bot is dead
-            boolean botDead = true;
-            if (session.getBotId() != null) {
-                var bot = sessionWorld.getEntity(session.getBotId());
-                botDead = (bot == null || !bot.isAlive());
             }
 
             if (botDead) {
@@ -470,7 +467,8 @@ public class ArenaManager {
                 PlayerStats.addWin(server, playerId);
 
                 cleanupArena(player, session, server, true);
-                activeSessions.remove(playerId);
+                if (toRemove == null) toRemove = new java.util.ArrayList<>();
+                toRemove.add(playerId);
                 ArenaDataStorage.deletePlayerData(server, playerId);
             }
 
@@ -491,6 +489,13 @@ public class ArenaManager {
                 // Track stats
                 PlayerStats.addLoss(server, playerId);
                 // Will be cleaned up on respawn
+            }
+        }
+
+        // Remove finished sessions after iteration
+        if (toRemove != null) {
+            for (UUID id : toRemove) {
+                activeSessions.remove(id);
             }
         }
     }

@@ -122,6 +122,7 @@ public class WaveDefenseMod implements ModInitializer {
 
     private static Formatting getDifficultyColor(Difficulty difficulty) {
         return switch (difficulty) {
+            case PRACTICE -> Formatting.AQUA;
             case EASY -> Formatting.GREEN;
             case MEDIUM -> Formatting.YELLOW;
             case HARD -> Formatting.RED;

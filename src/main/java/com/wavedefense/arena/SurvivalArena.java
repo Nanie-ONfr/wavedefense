@@ -28,6 +28,7 @@ public class SurvivalArena {
     private static final int BOT_SPAWN_DISTANCE = 100;
     private static final int BOT_CHECK_RADIUS = 150;
     private static final int MAX_BOTS_PER_PLAYER = 5;
+    private static final int SPAWN_COOLDOWN_TICKS = 100; // 5 seconds between spawn attempts
 
     public static final RegistryKey<World> SURVIVAL_DIMENSION = RegistryKey.of(
             RegistryKeys.WORLD,
@@ -37,6 +38,7 @@ public class SurvivalArena {
     private final Map<UUID, PlayerData> playerData = new HashMap<>();
     private final Map<UUID, List<UUID>> playerBots = new HashMap<>();
     private final Map<UUID, BotAI> botAIs = new HashMap<>();
+    private final Map<UUID, Integer> spawnCooldowns = new HashMap<>();
     private final Random random = new Random();
 
     public void startSurvival(ServerPlayerEntity player, Kit kit) {
@@ -118,6 +120,7 @@ public class SurvivalArena {
 
         playerData.remove(playerId);
         playerBots.remove(playerId);
+        spawnCooldowns.remove(playerId);
 
         player.sendMessage(Text.literal("Survival Arena verlassen!")
                 .formatted(Formatting.YELLOW), false);
@@ -134,24 +137,27 @@ public class SurvivalArena {
             if (player == null) continue;
             if (!player.getCommandSource().getWorld().getRegistryKey().equals(World.OVERWORLD)) continue;
 
-            // Check and spawn bots
-            List<UUID> bots = playerBots.getOrDefault(playerId, new ArrayList<>());
+            // Use computeIfAbsent to ensure the list is stored (fixes getOrDefault bug)
+            List<UUID> bots = playerBots.computeIfAbsent(playerId, k -> new ArrayList<>());
 
             // Remove dead bots
             bots.removeIf(botId -> {
                 var bot = world.getEntity(botId);
                 if (bot == null || !bot.isAlive()) {
                     botAIs.remove(botId);
-                    // Bot killed - reward player
                     player.addExperience(50);
                     return true;
                 }
                 return false;
             });
 
-            // Spawn new bots if needed
-            if (bots.size() < MAX_BOTS_PER_PLAYER) {
+            // Decrement spawn cooldown
+            int cooldown = spawnCooldowns.getOrDefault(playerId, 0);
+            if (cooldown > 0) {
+                spawnCooldowns.put(playerId, cooldown - 1);
+            } else if (bots.size() < MAX_BOTS_PER_PLAYER) {
                 trySpawnBot(player, world, bots);
+                spawnCooldowns.put(playerId, SPAWN_COOLDOWN_TICKS);
             }
 
             // Tick bot AIs

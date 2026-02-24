@@ -84,7 +84,11 @@ public class MobSpawner {
 
     public void cleanupMobs(ServerWorld world, GameSession session) {
         for (UUID mobId : new HashSet<>(session.getSpawnedMobs())) {
-            world.getEntity(mobId);
+            var entity = world.getEntity(mobId);
+            if (entity != null) {
+                entity.discard();
+            }
         }
+        session.clearMobs();
     }
 }

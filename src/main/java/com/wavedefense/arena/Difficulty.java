@@ -1,9 +1,10 @@
 package com.wavedefense.arena;
 
 public enum Difficulty {
-    EASY("Easy", 0.25, 0.5, 10.0f, 50, 3.0),      // Player range
-    MEDIUM("Medium", 0.30, 0.75, 20.0f, 30, 3.0), // Player range
-    HARD("Hard", 0.35, 1.0, 30.0f, 15, 10.0);     // Extended range (max 10)
+    PRACTICE("Practice", 0.20, 0.0, 50.0f, 60, 3.0),  // No damage, high health for training
+    EASY("Easy", 0.25, 0.5, 10.0f, 50, 3.0),          // Player range
+    MEDIUM("Medium", 0.30, 0.75, 20.0f, 30, 3.0),     // Player range
+    HARD("Hard", 0.35, 1.0, 30.0f, 15, 10.0);         // Extended range (max 10)
 
     private final String name;
     private final double movementSpeed;

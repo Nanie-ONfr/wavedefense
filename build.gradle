@@ -1,7 +1,6 @@
 plugins {
     id 'fabric-loom' version '1.13.6'
     id 'maven-publish'
-    id 'com.modrinth.minotaur' version '2.8.7'
 }
 
 version = project.mod_version
@@ -68,36 +67,4 @@ publishing {
     }
 }
 
-modrinth {
-    token = System.getenv("MODRINTH_TOKEN") ?: project.findProperty("modrinth_token") ?: ""
-    projectId = "wavedefense"
-    versionNumber = project.version
-    versionName = "Wave Defense ${project.version}"
-    versionType = "release"
-    uploadFile = remapJar
-    gameVersions = ["1.21.1"]
-    loaders = ["fabric"]
-    dependencies {
-        required.project "fabric-api"
-    }
-    changelog = """
-## v1.1.0 - Major Combat Update
-
-### New Features
-- Advanced BotAI with realistic PvP mechanics (dodge, combo, W-tap)
-- Combat feedback: bossbar, warmup countdown, stats display
-- New POTION kit with splash potions and buff system
-- Rematch command (/wd rematch)
-- Comprehensive help command (/wd help)
-- Configurable bot settings (config/wavedefense_bot.json)
-
-### Improvements
-- Combat stats tracking (hits, damage, duration)
-- Visual feedback during combat (actionbar)
-- Fixed arrow crash in BotAI
-
-### Kit Changes
-- Added POTION kit: Splash Potions + Speed + Strength buffs
-"""
-}
 
