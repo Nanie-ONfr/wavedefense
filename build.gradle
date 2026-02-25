@@ -1,6 +1,7 @@
 plugins {
     id 'fabric-loom' version '1.13.6'
     id 'maven-publish'
+    id 'com.modrinth.minotaur' version '2.8.7'
 }
 
 version = project.mod_version
@@ -67,4 +68,38 @@ publishing {
     }
 }
 
+modrinth {
+    token = System.getenv("MODRINTH_TOKEN") ?: project.findProperty("modrinth_token") ?: ""
+    projectId = "wave-defend"
+    versionNumber = project.version
+    versionName = "Wave Defense ${project.version}"
+    versionType = "release"
+    uploadFile = remapJar
+    gameVersions = [project.minecraft_version]
+    loaders = ["fabric"]
+    dependencies {
+        required.project "fabric-api"
+    }
+    changelog = """
+## v1.1.1 - Bug Fixes & Performance
+
+### Bug Fixes
+- Fix PRACTICE difficulty causing crashes (missing switch cases)
+- Fix SurvivalArena losing tracked bots on tick
+- Fix MobSpawner.cleanupMobs not removing entities
+- Fix ConcurrentModificationException in tick loops
+
+### Performance
+- Eliminate HashMap copies in all tick loops
+- Single entity lookup per arena tick (was 2)
+- Enderman cleanup every 2s instead of every tick
+- Spawn cooldown in SurvivalArena
+- ThreadLocalRandom + cached difficulty values in BotAI
+
+### Improvements
+- Full PRACTICE difficulty mode (slow, no dodge, no heal)
+- Bot looks at target for better hit detection
+- PRACTICE added to lobby difficulty cycle
+"""
+}
 

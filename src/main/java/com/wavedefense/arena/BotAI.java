@@ -22,6 +22,7 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 public class BotAI {
     private final MobEntity bot;
+    private final ServerWorld world;
     private ServerPlayerEntity target;
     private final Kit kit;
     private final Difficulty difficulty;
@@ -78,8 +79,9 @@ public class BotAI {
     private int hitsLanded = 0;
     private long lastDamageTime = 0;
 
-    public BotAI(MobEntity bot, ServerPlayerEntity target, Kit kit, Difficulty difficulty) {
+    public BotAI(MobEntity bot, ServerPlayerEntity target, Kit kit, Difficulty difficulty, ServerWorld world) {
         this.bot = bot;
+        this.world = world;
         this.target = target;
         this.kit = kit;
         this.difficulty = difficulty;
@@ -246,7 +248,7 @@ public class BotAI {
         bot.addStatusEffect(new StatusEffectInstance(StatusEffects.ABSORPTION, 120 * 20, 0));
 
         // Visual/audio feedback
-        ServerWorld world = (ServerWorld) bot.getEntityWorld();
+        ServerWorld world = this.world;
         world.playSound(null, bot.getX(), bot.getY(), bot.getZ(),
             SoundEvents.ENTITY_PLAYER_BURP, SoundCategory.HOSTILE, 1.0f, 1.0f);
 
@@ -416,7 +418,7 @@ public class BotAI {
                 target.velocityDirty = true;
 
                 // Play shield disable sound
-                ServerWorld world = (ServerWorld) bot.getEntityWorld();
+                ServerWorld world = this.world;
                 world.playSound(null, target.getX(), target.getY(), target.getZ(),
                     SoundEvents.ITEM_SHIELD_BREAK, SoundCategory.PLAYERS, 1.0f, 1.0f);
             }
@@ -454,7 +456,7 @@ public class BotAI {
             fallStartY = bot.getY() + 5;
 
             // Wind charge sound
-            ServerWorld world = (ServerWorld) bot.getEntityWorld();
+            ServerWorld world = this.world;
             world.playSound(null, bot.getX(), bot.getY(), bot.getZ(),
                 SoundEvents.ENTITY_WIND_CHARGE_WIND_BURST, SoundCategory.HOSTILE, 1.0f, 1.0f);
         }
@@ -468,7 +470,7 @@ public class BotAI {
                 damage = Math.min(damage, 28.0f);
 
                 bot.swingHand(Hand.MAIN_HAND);
-                ServerWorld world = (ServerWorld) bot.getEntityWorld();
+                ServerWorld world = this.world;
                 target.damage(world, bot.getDamageSources().mobAttack(bot), damage);
 
                 // Big knockback
@@ -536,7 +538,7 @@ public class BotAI {
     // CRYSTAL - Explosion damage simulation
     private void tickCrystal(double distance) {
         if (distance > 2.0 && distance < 8.0 && specialCooldown == 0) {
-            ServerWorld world = (ServerWorld) bot.getEntityWorld();
+            ServerWorld world = this.world;
 
             float damage = (float) (9.0 * damageMultiplier);
 
@@ -591,7 +593,7 @@ public class BotAI {
             target.velocityDirty = true;
 
             // Rod sound
-            ServerWorld world = (ServerWorld) bot.getEntityWorld();
+            ServerWorld world = this.world;
             world.playSound(null, target.getX(), target.getY(), target.getZ(),
                 SoundEvents.ENTITY_FISHING_BOBBER_RETRIEVE, SoundCategory.HOSTILE, 1.0f, 1.0f);
 
@@ -613,7 +615,7 @@ public class BotAI {
 
     // POTION - Splash potion throwing and buff management
     private void tickPotion(double distance) {
-        ServerWorld world = (ServerWorld) bot.getEntityWorld();
+        ServerWorld world = this.world;
 
         // Self buff when low on effects or at start
         if (specialCooldown == 0 && bot.getActiveStatusEffects().isEmpty()) {
@@ -753,12 +755,12 @@ public class BotAI {
             damage *= 1.5f;
 
             // Crit particles
-            ServerWorld world = (ServerWorld) bot.getEntityWorld();
+            ServerWorld world = this.world;
             world.spawnParticles(ParticleTypes.CRIT, target.getX(), target.getY() + 1, target.getZ(),
                 8, 0.3, 0.5, 0.3, 0.1);
         }
 
-        ServerWorld world = (ServerWorld) bot.getEntityWorld();
+        ServerWorld world = this.world;
         target.damage(world, bot.getDamageSources().mobAttack(bot), damage);
 
         // Hit sound
@@ -767,7 +769,7 @@ public class BotAI {
     }
 
     private void shootArrow() {
-        ServerWorld world = (ServerWorld) bot.getEntityWorld();
+        ServerWorld world = this.world;
 
         // Predict target movement
         double dist = bot.distanceTo(target);

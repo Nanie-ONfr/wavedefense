@@ -192,7 +192,7 @@ public class SurvivalArena {
             setupBot(bot, player, kit, difficulty);
             bots.add(bot.getUuid());
 
-            BotAI ai = new BotAI(bot, player, kit, difficulty);
+            BotAI ai = new BotAI(bot, player, kit, difficulty, world);
             botAIs.put(bot.getUuid(), ai);
 
             // Give player same kit

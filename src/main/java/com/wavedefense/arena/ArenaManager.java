@@ -196,7 +196,7 @@ public class ArenaManager {
         if (bot != null) {
             setupBot(bot, player, kit, difficulty);
             session.setBotId(bot.getUuid());
-            BotAI botAI = new BotAI(bot, player, kit, difficulty);
+            BotAI botAI = new BotAI(bot, player, kit, difficulty, world);
             session.setBotAI(botAI);
         }
     }

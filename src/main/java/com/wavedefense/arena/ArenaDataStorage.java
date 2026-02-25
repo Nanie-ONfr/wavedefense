@@ -1,6 +1,7 @@
 package com.wavedefense.arena;
 
 import net.minecraft.item.ItemStack;
+import com.wavedefense.util.NbtCompat;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtIo;
@@ -39,8 +40,8 @@ public class ArenaDataStorage {
     }
 
     private static ItemStack itemFromNbt(NbtCompound nbt) {
-        String idStr = nbt.getString("id").orElse("minecraft:air");
-        int count = nbt.getInt("count").orElse(0);
+        String idStr = NbtCompat.getString(nbt, "id", "minecraft:air");
+        int count = NbtCompat.getInt(nbt, "count", 0);
 
         if (count == 0 || idStr.equals("minecraft:air")) {
             return ItemStack.EMPTY;
@@ -134,22 +135,22 @@ public class ArenaDataStorage {
             NbtCompound nbt = NbtIo.readCompressed(playerFile.toPath(), NbtSizeTracker.ofUnlimitedBytes());
 
             // Load kit and difficulty
-            Kit kit = Kit.valueOf(nbt.getString("kit").orElse("SWORD"));
-            Difficulty difficulty = Difficulty.valueOf(nbt.getString("difficulty").orElse("MEDIUM"));
+            Kit kit = Kit.valueOf(NbtCompat.getString(nbt, "kit", "SWORD"));
+            Difficulty difficulty = Difficulty.valueOf(NbtCompat.getString(nbt, "difficulty", "MEDIUM"));
 
             // Load original position
-            double origX = nbt.getDouble("origX").orElse(0.0);
-            double origY = nbt.getDouble("origY").orElse(100.0);
-            double origZ = nbt.getDouble("origZ").orElse(0.0);
-            float origYaw = nbt.getFloat("origYaw").orElse(0.0f);
-            float origPitch = nbt.getFloat("origPitch").orElse(0.0f);
+            double origX = NbtCompat.getDouble(nbt, "origX", 0.0);
+            double origY = NbtCompat.getDouble(nbt, "origY", 100.0);
+            double origZ = NbtCompat.getDouble(nbt, "origZ", 0.0);
+            float origYaw = NbtCompat.getFloat(nbt, "origYaw", 0.0f);
+            float origPitch = NbtCompat.getFloat(nbt, "origPitch", 0.0f);
 
             // Load inventory
             List<ItemStack> inventory = new ArrayList<>();
             NbtElement inventoryElement = nbt.get("inventory");
             if (inventoryElement instanceof NbtList inventoryList) {
                 for (int i = 0; i < inventoryList.size(); i++) {
-                    NbtCompound itemNbt = inventoryList.getCompoundOrEmpty(i);
+                    NbtCompound itemNbt = NbtCompat.getCompound(inventoryList, i);
                     inventory.add(itemFromNbt(itemNbt));
                 }
             }
@@ -163,7 +164,7 @@ public class ArenaDataStorage {
             NbtElement armorElement = nbt.get("armor");
             if (armorElement instanceof NbtList armorList) {
                 for (int i = 0; i < armorList.size(); i++) {
-                    NbtCompound itemNbt = armorList.getCompoundOrEmpty(i);
+                    NbtCompound itemNbt = NbtCompat.getCompound(armorList, i);
                     armor.add(itemFromNbt(itemNbt));
                 }
             }
@@ -173,12 +174,12 @@ public class ArenaDataStorage {
             }
 
             // Load offhand
-            NbtCompound offhandNbt = nbt.getCompoundOrEmpty("offhand");
+            NbtCompound offhandNbt = NbtCompat.getCompound(nbt, "offhand");
             ItemStack offhand = itemFromNbt(offhandNbt);
 
             // Load health and food
-            float health = nbt.getFloat("health").orElse(20.0f);
-            int food = nbt.getInt("food").orElse(20);
+            float health = NbtCompat.getFloat(nbt, "health", 20.0f);
+            int food = NbtCompat.getInt(nbt, "food", 20);
 
             // Create session from loaded data
             ArenaSession session = new ArenaSession(playerId, kit, difficulty, origX, origY, origZ, origYaw, origPitch,
@@ -186,14 +187,14 @@ public class ArenaDataStorage {
 
             // Load arena center
             if (nbt.contains("arenaX")) {
-                int arenaX = nbt.getInt("arenaX").orElse(0);
-                int arenaY = nbt.getInt("arenaY").orElse(200);
-                int arenaZ = nbt.getInt("arenaZ").orElse(0);
+                int arenaX = NbtCompat.getInt(nbt, "arenaX", 0);
+                int arenaY = NbtCompat.getInt(nbt, "arenaY", 200);
+                int arenaZ = NbtCompat.getInt(nbt, "arenaZ", 0);
                 session.setArenaCenter(new net.minecraft.util.math.BlockPos(arenaX, arenaY, arenaZ));
             }
 
             // Load bot ID
-            String botIdStr = nbt.getString("botId").orElse(null);
+            String botIdStr = NbtCompat.getString(nbt, "botId", null);
             if (botIdStr != null && !botIdStr.isEmpty()) {
                 session.setBotId(UUID.fromString(botIdStr));
             }

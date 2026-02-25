@@ -1,5 +1,6 @@
 package com.wavedefense.lobby;
 
+import com.wavedefense.util.NbtCompat;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtSizeTracker;
@@ -89,11 +90,11 @@ public class PlayerStats {
 
             NbtCompound nbt = NbtIo.readCompressed(statsFile.toPath(), NbtSizeTracker.ofUnlimitedBytes());
             Stats stats = new Stats();
-            stats.wins = nbt.getInt("wins").orElse(0);
-            stats.losses = nbt.getInt("losses").orElse(0);
-            stats.kills = nbt.getInt("kills").orElse(0);
-            stats.deaths = nbt.getInt("deaths").orElse(0);
-            stats.gamesPlayed = nbt.getInt("gamesPlayed").orElse(0);
+            stats.wins = NbtCompat.getInt(nbt, "wins", 0);
+            stats.losses = NbtCompat.getInt(nbt, "losses", 0);
+            stats.kills = NbtCompat.getInt(nbt, "kills", 0);
+            stats.deaths = NbtCompat.getInt(nbt, "deaths", 0);
+            stats.gamesPlayed = NbtCompat.getInt(nbt, "gamesPlayed", 0);
             return stats;
         } catch (IOException e) {
             return new Stats();
