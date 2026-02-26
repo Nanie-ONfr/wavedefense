@@ -1,29 +1,30 @@
 package com.wavedefense.arena;
 
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.entity.projectile.ArrowEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.particle.ParticleTypes;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.Vec3d;
+import org.bukkit.Location;
+import org.bukkit.Particle;
+import org.bukkit.Sound;
+import org.bukkit.World;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.entity.Arrow;
+import org.bukkit.entity.Player;
+import org.bukkit.entity.Zombie;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
+import org.bukkit.util.Vector;
 
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Advanced PvP AI for arena bots - mimics real player behavior
- * Optimized for realistic 1.21 combat mechanics
+ * Optimized for realistic 1.21 combat mechanics (Paper API)
+ *
+ * The bot entity is a Zombie with AI disabled (setAI(false) at creation).
+ * All movement is controlled manually via setVelocity().
  */
 public class BotAI {
-    private final MobEntity bot;
-    private final ServerWorld world;
-    private ServerPlayerEntity target;
+    private final Zombie bot;
+    private final World world;
+    private Player target;
     private final Kit kit;
     private final Difficulty difficulty;
 
@@ -51,8 +52,8 @@ public class BotAI {
     private int comboCount = 0;
     private int ticksSinceLastHit = 0;
     private double lastTargetHealth = 20.0;
-    private Vec3d lastTargetPos = Vec3d.ZERO;
-    private Vec3d lastTargetVelocity = Vec3d.ZERO;
+    private Vector lastTargetPos = new Vector(0, 0, 0);
+    private Vector lastTargetVelocity = new Vector(0, 0, 0);
 
     // Movement patterns
     private int currentPattern = 0;
@@ -79,7 +80,10 @@ public class BotAI {
     private int hitsLanded = 0;
     private long lastDamageTime = 0;
 
-    public BotAI(MobEntity bot, ServerPlayerEntity target, Kit kit, Difficulty difficulty, ServerWorld world) {
+    // Hurt tracking - set externally via damage event listener since Paper has no hurtTime field
+    private boolean wasRecentlyHurt = false;
+
+    public BotAI(Zombie bot, Player target, Kit kit, Difficulty difficulty, World world) {
         this.bot = bot;
         this.world = world;
         this.target = target;
@@ -99,23 +103,27 @@ public class BotAI {
         this.currentPattern = ThreadLocalRandom.current().nextInt(STRAFE_PATTERNS.length);
     }
 
-    public void setTarget(ServerPlayerEntity newTarget) {
+    public void setTarget(Player newTarget) {
         this.target = newTarget;
+    }
+
+    /**
+     * Called externally (e.g. from EntityDamageEvent listener) to signal the bot was just hurt.
+     */
+    public void notifyHurt() {
+        this.wasRecentlyHurt = true;
     }
 
     public void tick() {
         if (bot == null || bot.isDead()) return;
         if (target == null || target.isDead()) return;
 
-        // Keep target set
-        bot.setTarget(target);
-
-        // Make bot look at target (important for Minecraft melee hit detection)
-        bot.getLookControl().lookAt(target, 30.0f, 30.0f);
+        // Make bot look at target
+        lookAtTarget();
 
         // Track target movement for prediction
-        Vec3d currentPos = new Vec3d(target.getX(), target.getY(), target.getZ());
-        lastTargetVelocity = currentPos.subtract(lastTargetPos);
+        Vector currentPos = target.getLocation().toVector();
+        lastTargetVelocity = currentPos.clone().subtract(lastTargetPos);
         lastTargetPos = currentPos;
 
         // Decrement all cooldowns
@@ -129,17 +137,18 @@ public class BotAI {
 
         // Random reaction delays based on difficulty
         if (ThreadLocalRandom.current().nextInt(100) < getReactionChance()) {
-            reactionDelay = ThreadLocalRandom.current().nextInt(difficulty.getReactionDelayTicks() / 2);
+            reactionDelay = ThreadLocalRandom.current().nextInt(Math.max(1, difficulty.getReactionDelayTicks() / 2));
             return;
         }
 
-        double distance = bot.distanceTo(target);
+        double distance = bot.getLocation().distance(target.getLocation());
         ticksSinceLastHit++;
 
         // Check if we took damage - dodge/react
-        if (bot.hurtTime > 0 && dodgeCooldown == 0) {
+        if (wasRecentlyHurt && dodgeCooldown == 0) {
             performDodge(distance);
         }
+        wasRecentlyHurt = false;
 
         // Healing behavior - eat gapple when low
         if (shouldHeal() && healCooldown == 0) {
@@ -152,13 +161,12 @@ public class BotAI {
         // Execute kit-specific behavior
         switch (kit) {
             case MACE -> tickMace(distance);
-            case SWORD -> tickSword(distance);
-            case AXE -> tickAxe(distance);
-            case BOW -> tickBow(distance);
-            case CRYSTAL -> tickCrystal(distance);
-            case UHC -> tickUHC(distance);
-            case SHIELD -> tickShield(distance);
-            case POTION -> tickPotion(distance);
+            case NODEBUFF, GAPPLE, COMBO, BOXING, SUMO, SOUP -> tickSword(distance);
+            case AXE_SHIELD -> tickAxe(distance);
+            case ARCHER, BRIDGE -> tickBow(distance);
+            case CRYSTAL, ANCHOR -> tickCrystal(distance);
+            case BUILDUHC, CLASSIC -> tickUHC(distance);
+            case DEBUFF -> tickPotion(distance);
         }
 
         // Common movement behaviors
@@ -170,6 +178,19 @@ public class BotAI {
             ticksSinceLastHit = 0;
         }
         lastTargetHealth = target.getHealth();
+    }
+
+    /**
+     * Make bot face the target by computing yaw/pitch and setting rotation.
+     * Uses setRotation() to avoid the disruptive teleport approach.
+     */
+    private void lookAtTarget() {
+        Location botLoc = bot.getLocation();
+        Vector dir = target.getEyeLocation().toVector().subtract(botLoc.toVector());
+        if (dir.lengthSquared() > 0) {
+            botLoc.setDirection(dir.normalize());
+            bot.setRotation(botLoc.getYaw(), botLoc.getPitch());
+        }
     }
 
     private void decrementCooldowns() {
@@ -192,11 +213,14 @@ public class BotAI {
     private void performDodge(double distance) {
         if (distance > 5.0) return;
 
+        Location botLoc = bot.getLocation();
+        Location targetLoc = target.getLocation();
+
         // Jump back or strafe quickly
-        Vec3d awayFromTarget = new Vec3d(
-            bot.getX() - target.getX(),
+        Vector awayFromTarget = new Vector(
+            botLoc.getX() - targetLoc.getX(),
             0,
-            bot.getZ() - target.getZ()
+            botLoc.getZ() - targetLoc.getZ()
         ).normalize();
 
         double dodgeChance = switch (difficulty) {
@@ -208,14 +232,13 @@ public class BotAI {
 
         if (ThreadLocalRandom.current().nextDouble() < dodgeChance) {
             // Strafe dodge
-            Vec3d strafeVec = new Vec3d(-awayFromTarget.z, 0, awayFromTarget.x);
+            Vector strafeVec = new Vector(-awayFromTarget.getZ(), 0, awayFromTarget.getX());
             int dir = ThreadLocalRandom.current().nextBoolean() ? 1 : -1;
-            bot.setVelocity(
-                strafeVec.x * 0.4 * dir + awayFromTarget.x * 0.2,
+            bot.setVelocity(new Vector(
+                strafeVec.getX() * 0.4 * dir + awayFromTarget.getX() * 0.2,
                 0.1,
-                strafeVec.z * 0.4 * dir + awayFromTarget.z * 0.2
-            );
-            bot.velocityDirty = true;
+                strafeVec.getZ() * 0.4 * dir + awayFromTarget.getZ() * 0.2
+            ));
             strafeDirection *= -1;
         }
 
@@ -224,13 +247,21 @@ public class BotAI {
     }
 
     private boolean shouldHeal() {
-        float healthPercent = bot.getHealth() / bot.getMaxHealth();
+        double healthPercent = bot.getHealth() / getMaxHealth();
         return switch (difficulty) {
             case PRACTICE -> false;
             case EASY -> healthPercent < 0.25;
             case MEDIUM -> healthPercent < 0.35;
             case HARD -> healthPercent < 0.5;
         };
+    }
+
+    /**
+     * Gets the bot's max health via attribute.
+     */
+    private double getMaxHealth() {
+        var attr = bot.getAttribute(Attribute.MAX_HEALTH);
+        return attr != null ? attr.getValue() : 20.0;
     }
 
     private void performHeal() {
@@ -242,15 +273,15 @@ public class BotAI {
             case HARD -> 8.0f;
         };
 
-        bot.heal(healAmount);
+        double newHealth = Math.min(bot.getHealth() + healAmount, getMaxHealth());
+        bot.setHealth(newHealth);
 
         // Add absorption effect
-        bot.addStatusEffect(new StatusEffectInstance(StatusEffects.ABSORPTION, 120 * 20, 0));
+        bot.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, 120 * 20, 0));
 
         // Visual/audio feedback
-        ServerWorld world = this.world;
-        world.playSound(null, bot.getX(), bot.getY(), bot.getZ(),
-            SoundEvents.ENTITY_PLAYER_BURP, SoundCategory.HOSTILE, 1.0f, 1.0f);
+        Location botLoc = bot.getLocation();
+        world.playSound(botLoc, Sound.ENTITY_PLAYER_BURP, 1.0f, 1.0f);
 
         healCooldown = switch (difficulty) {
             case PRACTICE -> 400; // 20 seconds
@@ -261,23 +292,29 @@ public class BotAI {
     }
 
     private void updateRetreatState() {
-        float healthPercent = bot.getHealth() / bot.getMaxHealth();
+        double healthPercent = bot.getHealth() / getMaxHealth();
 
-        if (healthPercent < 0.3f && retreatCooldown == 0) {
+        if (healthPercent < 0.3 && retreatCooldown == 0) {
             isRetreating = true;
             retreatCooldown = 80;
         }
-        if (healthPercent > 0.5f || retreatCooldown == 0) {
+        if (healthPercent > 0.5 || retreatCooldown == 0) {
             isRetreating = false;
         }
     }
 
     private void tickMovement(double distance) {
-        Vec3d toTarget = new Vec3d(
-            target.getX() - bot.getX(),
+        Location botLoc = bot.getLocation();
+        Location targetLoc = target.getLocation();
+
+        Vector toTarget = new Vector(
+            targetLoc.getX() - botLoc.getX(),
             0,
-            target.getZ() - bot.getZ()
-        ).normalize();
+            targetLoc.getZ() - botLoc.getZ()
+        );
+        if (toTarget.lengthSquared() > 0) {
+            toTarget.normalize();
+        }
 
         // Update strafe pattern
         patternTicks++;
@@ -293,18 +330,18 @@ public class BotAI {
             }
         }
 
-        // Calculate strafe vector
-        Vec3d strafeVec = new Vec3d(-toTarget.z, 0, toTarget.x).multiply(strafeDirection);
+        // Calculate strafe vector (perpendicular to toTarget)
+        Vector strafeVec = new Vector(-toTarget.getZ(), 0, toTarget.getX()).multiply(strafeDirection);
 
         // Retreating behavior
         if (isRetreating && distance < 10.0) {
             double speed = movementSpeed * 0.85;
-            bot.setVelocity(
-                -toTarget.x * speed + strafeVec.x * speed * 0.4,
-                bot.getVelocity().y,
-                -toTarget.z * speed + strafeVec.z * speed * 0.4
-            );
-            bot.velocityDirty = true;
+            double currentY = bot.getVelocity().getY();
+            bot.setVelocity(new Vector(
+                -toTarget.getX() * speed + strafeVec.getX() * speed * 0.4,
+                currentY,
+                -toTarget.getZ() * speed + strafeVec.getZ() * speed * 0.4
+            ));
             return;
         }
 
@@ -320,24 +357,24 @@ public class BotAI {
 
             // Add some randomness to movement
             double noise = (ThreadLocalRandom.current().nextDouble() - 0.5) * 0.1;
+            double currentY = bot.getVelocity().getY();
 
-            bot.setVelocity(
-                toTarget.x * speed + strafeVec.x * speed * strafeAmount + noise,
-                bot.getVelocity().y,
-                toTarget.z * speed + strafeVec.z * speed * strafeAmount + noise
-            );
-            bot.velocityDirty = true;
+            bot.setVelocity(new Vector(
+                toTarget.getX() * speed + strafeVec.getX() * speed * strafeAmount + noise,
+                currentY,
+                toTarget.getZ() * speed + strafeVec.getZ() * speed * strafeAmount + noise
+            ));
         }
 
         // Circle strafing when close
         if (distance < 3.0 && distance > 1.5) {
             double speed = movementSpeed * 0.65;
-            bot.setVelocity(
-                strafeVec.x * speed + toTarget.x * speed * 0.2,
-                bot.getVelocity().y,
-                strafeVec.z * speed + toTarget.z * speed * 0.2
-            );
-            bot.velocityDirty = true;
+            double currentY = bot.getVelocity().getY();
+            bot.setVelocity(new Vector(
+                strafeVec.getX() * speed + toTarget.getX() * speed * 0.2,
+                currentY,
+                strafeVec.getZ() * speed + toTarget.getZ() * speed * 0.2
+            ));
         }
     }
 
@@ -354,8 +391,8 @@ public class BotAI {
             };
 
             if (shouldJump && ThreadLocalRandom.current().nextDouble() < critChance) {
-                bot.setVelocity(bot.getVelocity().x, 0.42, bot.getVelocity().z);
-                bot.velocityDirty = true;
+                Vector vel = bot.getVelocity();
+                bot.setVelocity(new Vector(vel.getX(), 0.42, vel.getZ()));
                 jumpCooldown = 12;
             }
 
@@ -371,15 +408,22 @@ public class BotAI {
             };
 
             if (sprintResetCooldown == 0 && ThreadLocalRandom.current().nextDouble() < wtapChance && comboCount > 0) {
-                Vec3d kb = new Vec3d(target.getX() - bot.getX(), 0, target.getZ() - bot.getZ()).normalize();
+                Location bLoc = bot.getLocation();
+                Location tLoc = target.getLocation();
+                Vector kb = new Vector(
+                    tLoc.getX() - bLoc.getX(),
+                    0,
+                    tLoc.getZ() - bLoc.getZ()
+                ).normalize();
+
                 double kbStrength = switch (difficulty) {
                     case PRACTICE -> 0.2;
                     case EASY -> 0.35;
                     case MEDIUM -> 0.45;
                     case HARD -> 0.55;
                 };
-                target.addVelocity(kb.x * kbStrength, 0.38, kb.z * kbStrength);
-                target.velocityDirty = true;
+                target.setVelocity(target.getVelocity().add(
+                    new Vector(kb.getX() * kbStrength, 0.38, kb.getZ() * kbStrength)));
                 sprintResetCooldown = 6;
             }
 
@@ -403,8 +447,8 @@ public class BotAI {
                     case HARD -> 0.75;
                 };
                 if (ThreadLocalRandom.current().nextDouble() < critChance) {
-                    bot.setVelocity(bot.getVelocity().x, 0.42, bot.getVelocity().z);
-                    bot.velocityDirty = true;
+                    Vector vel = bot.getVelocity();
+                    bot.setVelocity(new Vector(vel.getX(), 0.42, vel.getZ()));
                     jumpCooldown = 18;
                 }
             }
@@ -413,14 +457,18 @@ public class BotAI {
 
             // Shield break knockback
             if (target.isBlocking()) {
-                Vec3d kb = new Vec3d(target.getX() - bot.getX(), 0, target.getZ() - bot.getZ()).normalize();
-                target.addVelocity(kb.x * 0.7, 0.45, kb.z * 0.7);
-                target.velocityDirty = true;
+                Location bLoc = bot.getLocation();
+                Location tLoc = target.getLocation();
+                Vector kb = new Vector(
+                    tLoc.getX() - bLoc.getX(),
+                    0,
+                    tLoc.getZ() - bLoc.getZ()
+                ).normalize();
+                target.setVelocity(target.getVelocity().add(
+                    new Vector(kb.getX() * 0.7, 0.45, kb.getZ() * 0.7)));
 
                 // Play shield disable sound
-                ServerWorld world = this.world;
-                world.playSound(null, target.getX(), target.getY(), target.getZ(),
-                    SoundEvents.ITEM_SHIELD_BREAK, SoundCategory.PLAYERS, 1.0f, 1.0f);
+                world.playSound(tLoc, Sound.ITEM_SHIELD_BREAK, 1.0f, 1.0f);
             }
 
             attackCooldown = 16;
@@ -431,10 +479,12 @@ public class BotAI {
     private void tickMace(double distance) {
         // Wind charge launch
         if (distance < 12.0 && distance > 4.0 && windChargeCooldown == 0 && bot.isOnGround()) {
-            Vec3d toTarget = new Vec3d(
-                target.getX() - bot.getX(),
+            Location bLoc = bot.getLocation();
+            Location tLoc = target.getLocation();
+            Vector toTarget = new Vector(
+                tLoc.getX() - bLoc.getX(),
                 0,
-                target.getZ() - bot.getZ()
+                tLoc.getZ() - bLoc.getZ()
             ).normalize();
 
             double launchPower = switch (difficulty) {
@@ -444,8 +494,7 @@ public class BotAI {
                 case HARD -> 1.3;
             };
 
-            bot.setVelocity(toTarget.x * 0.5, launchPower, toTarget.z * 0.5);
-            bot.velocityDirty = true;
+            bot.setVelocity(new Vector(toTarget.getX() * 0.5, launchPower, toTarget.getZ() * 0.5));
             windChargeCooldown = switch (difficulty) {
                 case PRACTICE -> 200;
                 case EASY -> 120;
@@ -453,33 +502,36 @@ public class BotAI {
                 case HARD -> 60;
             };
             preparingSmash = true;
-            fallStartY = bot.getY() + 5;
+            fallStartY = bLoc.getY() + 5;
 
             // Wind charge sound
-            ServerWorld world = this.world;
-            world.playSound(null, bot.getX(), bot.getY(), bot.getZ(),
-                SoundEvents.ENTITY_WIND_CHARGE_WIND_BURST, SoundCategory.HOSTILE, 1.0f, 1.0f);
+            world.playSound(bLoc, Sound.ENTITY_WIND_CHARGE_WIND_BURST, 1.0f, 1.0f);
         }
 
         // Smash attack on landing
         if (preparingSmash && bot.isOnGround()) {
             preparingSmash = false;
             if (distance < 6.0) {
-                double fallDist = Math.max(0, fallStartY - bot.getY());
+                Location bLoc = bot.getLocation();
+                Location tLoc = target.getLocation();
+                double fallDist = Math.max(0, fallStartY - bLoc.getY());
                 float damage = (float) ((8.0 + fallDist * 2.5) * damageMultiplier);
                 damage = Math.min(damage, 28.0f);
 
-                bot.swingHand(Hand.MAIN_HAND);
-                ServerWorld world = this.world;
-                target.damage(world, bot.getDamageSources().mobAttack(bot), damage);
+                bot.swingMainHand();
+                target.damage(damage, bot);
 
                 // Big knockback
-                Vec3d kb = new Vec3d(target.getX() - bot.getX(), 0, target.getZ() - bot.getZ()).normalize();
-                target.addVelocity(kb.x * 0.9, 0.55, kb.z * 0.9);
-                target.velocityDirty = true;
+                Vector kb = new Vector(
+                    tLoc.getX() - bLoc.getX(),
+                    0,
+                    tLoc.getZ() - bLoc.getZ()
+                ).normalize();
+                target.setVelocity(target.getVelocity().add(
+                    new Vector(kb.getX() * 0.9, 0.55, kb.getZ() * 0.9)));
 
                 // Ground impact particles
-                world.spawnParticles(ParticleTypes.EXPLOSION, bot.getX(), bot.getY(), bot.getZ(),
+                world.spawnParticle(Particle.EXPLOSION, bLoc.getX(), bLoc.getY(), bLoc.getZ(),
                     5, 1.0, 0.5, 1.0, 0.1);
             }
         }
@@ -538,30 +590,32 @@ public class BotAI {
     // CRYSTAL - Explosion damage simulation
     private void tickCrystal(double distance) {
         if (distance > 2.0 && distance < 8.0 && specialCooldown == 0) {
-            ServerWorld world = this.world;
-
             float damage = (float) (9.0 * damageMultiplier);
 
             // Self damage (but less)
             float selfDamage = damage * 0.25f;
-            bot.damage(world, world.getDamageSources().explosion(null, null), selfDamage);
-            target.damage(world, world.getDamageSources().explosion(null, bot), damage);
+            bot.damage(selfDamage);
+            target.damage(damage, bot);
 
             // Knockback from "explosion"
-            Vec3d kb = new Vec3d(target.getX() - bot.getX(), 0, target.getZ() - bot.getZ()).normalize();
-            target.addVelocity(kb.x * 0.65, 0.45, kb.z * 0.65);
-            target.velocityDirty = true;
+            Location bLoc = bot.getLocation();
+            Location tLoc = target.getLocation();
+            Vector kb = new Vector(
+                tLoc.getX() - bLoc.getX(),
+                0,
+                tLoc.getZ() - bLoc.getZ()
+            ).normalize();
+            target.setVelocity(target.getVelocity().add(
+                new Vector(kb.getX() * 0.65, 0.45, kb.getZ() * 0.65)));
 
             // Crystal explosion particles and sound
-            Vec3d midPoint = new Vec3d(
-                (bot.getX() + target.getX()) / 2,
-                (bot.getY() + target.getY()) / 2,
-                (bot.getZ() + target.getZ()) / 2
+            Location midPoint = new Location(world,
+                (bLoc.getX() + tLoc.getX()) / 2,
+                (bLoc.getY() + tLoc.getY()) / 2,
+                (bLoc.getZ() + tLoc.getZ()) / 2
             );
-            world.spawnParticles(ParticleTypes.EXPLOSION_EMITTER, midPoint.x, midPoint.y, midPoint.z,
-                1, 0, 0, 0, 0);
-            world.playSound(null, midPoint.x, midPoint.y, midPoint.z,
-                SoundEvents.ENTITY_GENERIC_EXPLODE, SoundCategory.HOSTILE, 1.0f, 1.0f);
+            world.spawnParticle(Particle.EXPLOSION_EMITTER, midPoint, 1, 0, 0, 0, 0);
+            world.playSound(midPoint, Sound.ENTITY_GENERIC_EXPLODE, 1.0f, 1.0f);
 
             specialCooldown = switch (difficulty) {
                 case PRACTICE -> 80;
@@ -582,20 +636,25 @@ public class BotAI {
     private void tickUHC(double distance) {
         // Rod pull at medium range
         if (distance > 5.0 && distance < 14.0 && specialCooldown == 0) {
-            Vec3d pullDir = new Vec3d(bot.getX() - target.getX(), 0.25, bot.getZ() - target.getZ()).normalize();
+            Location bLoc = bot.getLocation();
+            Location tLoc = target.getLocation();
+            Vector pullDir = new Vector(
+                bLoc.getX() - tLoc.getX(),
+                0.25,
+                bLoc.getZ() - tLoc.getZ()
+            ).normalize();
+
             double pullStrength = switch (difficulty) {
                 case PRACTICE -> 0.2;
                 case EASY -> 0.35;
                 case MEDIUM -> 0.5;
                 case HARD -> 0.65;
             };
-            target.addVelocity(pullDir.x * pullStrength, pullDir.y, pullDir.z * pullStrength);
-            target.velocityDirty = true;
+            target.setVelocity(target.getVelocity().add(
+                new Vector(pullDir.getX() * pullStrength, pullDir.getY(), pullDir.getZ() * pullStrength)));
 
             // Rod sound
-            ServerWorld world = this.world;
-            world.playSound(null, target.getX(), target.getY(), target.getZ(),
-                SoundEvents.ENTITY_FISHING_BOBBER_RETRIEVE, SoundCategory.HOSTILE, 1.0f, 1.0f);
+            world.playSound(tLoc, Sound.ENTITY_FISHING_BOBBER_RETRIEVE, 1.0f, 1.0f);
 
             specialCooldown = 25;
         }
@@ -603,8 +662,8 @@ public class BotAI {
         // Standard sword combat with combos
         if (distance < 3.5 && attackCooldown == 0) {
             if (bot.isOnGround() && jumpCooldown == 0 && ThreadLocalRandom.current().nextFloat() < 0.35f) {
-                bot.setVelocity(bot.getVelocity().x, 0.42, bot.getVelocity().z);
-                bot.velocityDirty = true;
+                Vector vel = bot.getVelocity();
+                bot.setVelocity(new Vector(vel.getX(), 0.42, vel.getZ()));
                 jumpCooldown = 14;
             }
 
@@ -615,17 +674,14 @@ public class BotAI {
 
     // POTION - Splash potion throwing and buff management
     private void tickPotion(double distance) {
-        ServerWorld world = this.world;
-
         // Self buff when low on effects or at start
-        if (specialCooldown == 0 && bot.getActiveStatusEffects().isEmpty()) {
+        if (specialCooldown == 0 && bot.getActivePotionEffects().isEmpty()) {
             // Give self speed and strength
-            bot.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 600, 1));
-            bot.addStatusEffect(new StatusEffectInstance(StatusEffects.STRENGTH, 600, 0));
+            bot.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 600, 1));
+            bot.addPotionEffect(new PotionEffect(PotionEffectType.STRENGTH, 600, 0));
 
             // Drinking sound
-            world.playSound(null, bot.getX(), bot.getY(), bot.getZ(),
-                SoundEvents.ENTITY_GENERIC_DRINK, SoundCategory.HOSTILE, 1.0f, 1.0f);
+            world.playSound(bot.getLocation(), Sound.ENTITY_GENERIC_DRINK, 1.0f, 1.0f);
 
             specialCooldown = 400; // 20 seconds
         }
@@ -641,17 +697,17 @@ public class BotAI {
             };
 
             int ticks = (int) (distance / 1.5);
-            Vec3d predicted = new Vec3d(
-                target.getX() + lastTargetVelocity.x * ticks * predictionMultiplier * 20,
-                target.getY(),
-                target.getZ() + lastTargetVelocity.z * ticks * predictionMultiplier * 20
+            // Prediction vector computed for future accuracy tuning / hit detection
+            @SuppressWarnings("unused")
+            Vector predicted = new Vector(
+                target.getLocation().getX() + lastTargetVelocity.getX() * ticks * predictionMultiplier * 20,
+                target.getLocation().getY(),
+                target.getLocation().getZ() + lastTargetVelocity.getZ() * ticks * predictionMultiplier * 20
             );
 
-            // Simulate harming potion damage
+            // Simulate harming potion damage (magic damage, no attacker source)
             float damage = (float) (6.0 * damageMultiplier);
-
-            // Apply damage and slowness effect
-            target.damage(world, world.getDamageSources().magic(), damage);
+            target.damage(damage);
 
             // Random debuff
             double debuffChance = switch (difficulty) {
@@ -668,14 +724,14 @@ public class BotAI {
                     case MEDIUM -> 100;
                     case HARD -> 160;
                 };
-                target.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, duration, 1));
+                target.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, duration, 1));
             }
 
             // Potion particles and sound
-            world.spawnParticles(ParticleTypes.SPLASH, target.getX(), target.getY() + 1, target.getZ(),
+            Location tLoc = target.getLocation();
+            world.spawnParticle(Particle.SPLASH, tLoc.getX(), tLoc.getY() + 1, tLoc.getZ(),
                 15, 0.5, 0.5, 0.5, 0.1);
-            world.playSound(null, target.getX(), target.getY(), target.getZ(),
-                SoundEvents.ENTITY_SPLASH_POTION_BREAK, SoundCategory.HOSTILE, 1.0f, 1.0f);
+            world.playSound(tLoc, Sound.ENTITY_SPLASH_POTION_BREAK, 1.0f, 1.0f);
 
             attackCooldown = switch (difficulty) {
                 case PRACTICE -> 80;
@@ -688,8 +744,8 @@ public class BotAI {
         // Melee when close
         if (distance < 3.5 && attackCooldown == 0) {
             if (bot.isOnGround() && jumpCooldown == 0 && ThreadLocalRandom.current().nextFloat() < 0.3f) {
-                bot.setVelocity(bot.getVelocity().x, 0.42, bot.getVelocity().z);
-                bot.velocityDirty = true;
+                Vector vel = bot.getVelocity();
+                bot.setVelocity(new Vector(vel.getX(), 0.42, vel.getZ()));
                 jumpCooldown = 12;
             }
 
@@ -710,8 +766,8 @@ public class BotAI {
                 case HARD -> 0.5;
             };
 
-            // Higher chance if target is swinging
-            if (target.handSwinging) {
+            // Higher chance if target is swinging (approximation via isHandRaised)
+            if (target.isHandRaised()) {
                 blockChance *= 2;
             }
 
@@ -735,9 +791,15 @@ public class BotAI {
         if (!isBlocking && distance < 3.5 && attackCooldown == 0) {
             // Shield bash
             if (ThreadLocalRandom.current().nextFloat() < 0.25f) {
-                Vec3d kb = new Vec3d(target.getX() - bot.getX(), 0, target.getZ() - bot.getZ()).normalize();
-                target.addVelocity(kb.x * 0.6, 0.35, kb.z * 0.6);
-                target.velocityDirty = true;
+                Location bLoc = bot.getLocation();
+                Location tLoc = target.getLocation();
+                Vector kb = new Vector(
+                    tLoc.getX() - bLoc.getX(),
+                    0,
+                    tLoc.getZ() - bLoc.getZ()
+                ).normalize();
+                target.setVelocity(target.getVelocity().add(
+                    new Vector(kb.getX() * 0.6, 0.35, kb.getZ() * 0.6)));
             }
 
             performMeleeAttack(6.0f, distance);
@@ -746,33 +808,32 @@ public class BotAI {
     }
 
     private void performMeleeAttack(float baseDamage, double distance) {
-        bot.swingHand(Hand.MAIN_HAND);
+        bot.swingMainHand();
 
         float damage = (float) (baseDamage * damageMultiplier);
 
         // Crit bonus if falling
-        if (bot.getVelocity().y < -0.08) {
+        if (bot.getVelocity().getY() < -0.08) {
             damage *= 1.5f;
 
             // Crit particles
-            ServerWorld world = this.world;
-            world.spawnParticles(ParticleTypes.CRIT, target.getX(), target.getY() + 1, target.getZ(),
+            Location tLoc = target.getLocation();
+            world.spawnParticle(Particle.CRIT, tLoc.getX(), tLoc.getY() + 1, tLoc.getZ(),
                 8, 0.3, 0.5, 0.3, 0.1);
         }
 
-        ServerWorld world = this.world;
-        target.damage(world, bot.getDamageSources().mobAttack(bot), damage);
+        target.damage(damage, bot);
 
         // Hit sound
-        world.playSound(null, target.getX(), target.getY(), target.getZ(),
-            SoundEvents.ENTITY_PLAYER_HURT, SoundCategory.PLAYERS, 0.5f, 1.0f);
+        world.playSound(target.getLocation(), Sound.ENTITY_PLAYER_HURT, 0.5f, 1.0f);
     }
 
     private void shootArrow() {
-        ServerWorld world = this.world;
+        Location botLoc = bot.getLocation();
+        Location eyeLoc = bot.getEyeLocation();
 
         // Predict target movement
-        double dist = bot.distanceTo(target);
+        double dist = botLoc.distance(target.getLocation());
 
         // Prediction based on difficulty
         double predictionMultiplier = switch (difficulty) {
@@ -783,13 +844,13 @@ public class BotAI {
         };
 
         int ticks = (int) (dist / 2.8);
-        Vec3d predicted = new Vec3d(
-            target.getX() + lastTargetVelocity.x * ticks * predictionMultiplier * 20,
-            target.getY() + target.getHeight() * 0.65,
-            target.getZ() + lastTargetVelocity.z * ticks * predictionMultiplier * 20
+        Vector predicted = new Vector(
+            target.getLocation().getX() + lastTargetVelocity.getX() * ticks * predictionMultiplier * 20,
+            target.getLocation().getY() + target.getHeight() * 0.65,
+            target.getLocation().getZ() + lastTargetVelocity.getZ() * ticks * predictionMultiplier * 20
         );
 
-        Vec3d dir = predicted.subtract(bot.getX(), bot.getEyeY(), bot.getZ()).normalize();
+        Vector dir = predicted.subtract(eyeLoc.toVector()).normalize();
 
         // Inaccuracy based on difficulty
         double inaccuracy = switch (difficulty) {
@@ -799,20 +860,31 @@ public class BotAI {
             case HARD -> 1.0;
         };
 
-        ItemStack arrowStack = new ItemStack(Items.ARROW);
-        ArrowEntity arrow = new ArrowEntity(world, bot, arrowStack, null);
-        arrow.setPosition(bot.getX(), bot.getEyeY(), bot.getZ());
+        // Add inaccuracy
+        ThreadLocalRandom rand = ThreadLocalRandom.current();
+        dir.add(new Vector(
+            (rand.nextDouble() - 0.5) * inaccuracy * 0.01,
+            (rand.nextDouble() - 0.5) * inaccuracy * 0.01,
+            (rand.nextDouble() - 0.5) * inaccuracy * 0.01
+        ));
+        if (dir.lengthSquared() > 0) {
+            dir.normalize();
+        }
 
         // Calculate proper arc
         double yOffset = 0.1 + (dist * 0.008);
-        arrow.setVelocity(dir.x, dir.y + yOffset, dir.z, 2.8f, (float) inaccuracy);
+        dir.setY(dir.getY() + yOffset);
+        if (dir.lengthSquared() > 0) {
+            dir.normalize();
+        }
+
+        float speed = 2.8f;
+        Arrow arrow = world.spawnArrow(eyeLoc, dir, speed, 0f);
+        arrow.setShooter(bot);
         arrow.setDamage(6.0 * damageMultiplier);
 
-        world.spawnEntity(arrow);
-
         // Bow release sound
-        world.playSound(null, bot.getX(), bot.getY(), bot.getZ(),
-            SoundEvents.ENTITY_ARROW_SHOOT, SoundCategory.HOSTILE, 1.0f, 1.0f);
+        world.playSound(botLoc, Sound.ENTITY_ARROW_SHOOT, 1.0f, 1.0f);
     }
 
     public boolean isBlocking() {

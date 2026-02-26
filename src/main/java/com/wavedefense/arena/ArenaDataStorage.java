@@ -1,226 +1,214 @@
 package com.wavedefense.arena;
 
-import net.minecraft.item.ItemStack;
-import com.wavedefense.util.NbtCompat;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtIo;
-import net.minecraft.nbt.NbtList;
-import net.minecraft.nbt.NbtSizeTracker;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.RegistryWrapper;
-import net.minecraft.server.MinecraftServer;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.WorldSavePath;
+import com.wavedefense.WaveDefensePlugin;
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.World;
+import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.inventory.ItemStack;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
- * Saves and loads arena session data to/from disk
+ * Saves and loads arena session data to/from disk using YamlConfiguration.
  */
 public class ArenaDataStorage {
-    private static final String ARENA_DATA_FOLDER = "wavedefense_arena";
 
-    private static NbtCompound itemToNbt(ItemStack stack) {
-        NbtCompound nbt = new NbtCompound();
-        if (stack.isEmpty()) {
-            nbt.putString("id", "minecraft:air");
-            nbt.putInt("count", 0);
-        } else {
-            Identifier id = Registries.ITEM.getId(stack.getItem());
-            nbt.putString("id", id.toString());
-            nbt.putInt("count", stack.getCount());
+    private static File getDataFolder() {
+        File folder = new File(WaveDefensePlugin.getInstance().getDataFolder(), "arena");
+        if (!folder.exists()) {
+            folder.mkdirs();
         }
-        return nbt;
+        return folder;
     }
 
-    private static ItemStack itemFromNbt(NbtCompound nbt) {
-        String idStr = NbtCompat.getString(nbt, "id", "minecraft:air");
-        int count = NbtCompat.getInt(nbt, "count", 0);
-
-        if (count == 0 || idStr.equals("minecraft:air")) {
-            return ItemStack.EMPTY;
-        }
-
-        var item = Registries.ITEM.get(Identifier.of(idStr));
-        return new ItemStack(item, count);
+    private static File getPlayerFile(UUID playerId) {
+        return new File(getDataFolder(), playerId.toString() + ".yml");
     }
 
-    public static void savePlayerData(MinecraftServer server, UUID playerId, ArenaSession session, RegistryWrapper.WrapperLookup registries) {
-        try {
-            Path worldPath = server.getSavePath(WorldSavePath.ROOT);
-            File dataFolder = worldPath.resolve(ARENA_DATA_FOLDER).toFile();
-            if (!dataFolder.exists()) {
-                dataFolder.mkdirs();
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> serializeItemList(List<ItemStack> items) {
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (ItemStack stack : items) {
+            if (stack != null && !stack.getType().isAir()) {
+                list.add(stack.serialize());
+            } else {
+                // Use empty map to mark null/air slot
+                list.add(new HashMap<>());
             }
+        }
+        return list;
+    }
 
-            File playerFile = new File(dataFolder, playerId.toString() + ".dat");
-            NbtCompound nbt = new NbtCompound();
+    private static List<ItemStack> deserializeItemList(List<?> rawList, int expectedSize) {
+        List<ItemStack> items = new ArrayList<>();
+        if (rawList != null) {
+            for (Object obj : rawList) {
+                if (obj instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> map = (Map<String, Object>) obj;
+                    if (map.isEmpty()) {
+                        items.add(null);
+                    } else {
+                        items.add(ItemStack.deserialize(map));
+                    }
+                } else {
+                    items.add(null);
+                }
+            }
+        }
+        // Pad to expected size
+        while (items.size() < expectedSize) {
+            items.add(null);
+        }
+        return items;
+    }
+
+    public static void savePlayerData(UUID playerId, ArenaSession session) {
+        try {
+            File file = getPlayerFile(playerId);
+            YamlConfiguration yaml = new YamlConfiguration();
 
             // Save kit and difficulty
-            nbt.putString("kit", session.getKit().name());
-            nbt.putString("difficulty", session.getDifficulty().name());
+            yaml.set("kit", session.getKit().name());
+            yaml.set("difficulty", session.getDifficulty().name());
 
-            // Save original position
-            nbt.putDouble("origX", session.getOriginalPosition().x);
-            nbt.putDouble("origY", session.getOriginalPosition().y);
-            nbt.putDouble("origZ", session.getOriginalPosition().z);
-            nbt.putFloat("origYaw", session.getOriginalYaw());
-            nbt.putFloat("origPitch", session.getOriginalPitch());
+            // Save original location
+            Location loc = session.getOriginalLocation();
+            yaml.set("original.world", loc.getWorld().getName());
+            yaml.set("original.x", loc.getX());
+            yaml.set("original.y", loc.getY());
+            yaml.set("original.z", loc.getZ());
+            yaml.set("original.yaw", (double) loc.getYaw());
+            yaml.set("original.pitch", (double) loc.getPitch());
 
             // Save arena center
             if (session.getArenaCenter() != null) {
-                nbt.putInt("arenaX", session.getArenaCenter().getX());
-                nbt.putInt("arenaY", session.getArenaCenter().getY());
-                nbt.putInt("arenaZ", session.getArenaCenter().getZ());
-            }
-
-            // Save arena world
-            if (session.getArenaWorld() != null) {
-                nbt.putString("arenaWorld", session.getArenaWorld().getValue().toString());
+                Location center = session.getArenaCenter();
+                yaml.set("arenaCenter.world", center.getWorld().getName());
+                yaml.set("arenaCenter.x", center.getX());
+                yaml.set("arenaCenter.y", center.getY());
+                yaml.set("arenaCenter.z", center.getZ());
             }
 
             // Save inventory
-            NbtList inventoryList = new NbtList();
-            List<ItemStack> inventory = session.getOriginalInventory();
-            for (int i = 0; i < inventory.size(); i++) {
-                NbtCompound itemNbt = itemToNbt(inventory.get(i));
-                itemNbt.putInt("Slot", i);
-                inventoryList.add(itemNbt);
-            }
-            nbt.put("inventory", inventoryList);
+            yaml.set("inventory", serializeItemList(session.getOriginalInventory()));
 
             // Save armor
-            NbtList armorList = new NbtList();
-            List<ItemStack> armor = session.getOriginalArmor();
-            for (int i = 0; i < armor.size(); i++) {
-                NbtCompound itemNbt = itemToNbt(armor.get(i));
-                itemNbt.putInt("Slot", i);
-                armorList.add(itemNbt);
-            }
-            nbt.put("armor", armorList);
+            yaml.set("armor", serializeItemList(session.getOriginalArmor()));
 
             // Save offhand
-            nbt.put("offhand", itemToNbt(session.getOriginalOffhand()));
+            if (session.getOriginalOffhand() != null && !session.getOriginalOffhand().getType().isAir()) {
+                yaml.set("offhand", session.getOriginalOffhand().serialize());
+            }
 
             // Save health and food
-            nbt.putFloat("health", session.getOriginalHealth());
-            nbt.putInt("food", session.getOriginalFoodLevel());
+            yaml.set("health", (double) session.getOriginalHealth());
+            yaml.set("food", session.getOriginalFoodLevel());
 
             // Save bot ID if exists
             if (session.getBotId() != null) {
-                nbt.putString("botId", session.getBotId().toString());
+                yaml.set("botId", session.getBotId().toString());
             }
 
-            NbtIo.writeCompressed(nbt, playerFile.toPath());
+            yaml.save(file);
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    public static ArenaSession loadPlayerData(MinecraftServer server, UUID playerId, RegistryWrapper.WrapperLookup registries) {
+    public static ArenaSession loadPlayerData(UUID playerId) {
+        File file = getPlayerFile(playerId);
+        if (!file.exists()) {
+            return null;
+        }
+
         try {
-            Path worldPath = server.getSavePath(WorldSavePath.ROOT);
-            File playerFile = worldPath.resolve(ARENA_DATA_FOLDER).resolve(playerId.toString() + ".dat").toFile();
-
-            if (!playerFile.exists()) {
-                return null;
-            }
-
-            NbtCompound nbt = NbtIo.readCompressed(playerFile.toPath(), NbtSizeTracker.ofUnlimitedBytes());
+            YamlConfiguration yaml = YamlConfiguration.loadConfiguration(file);
 
             // Load kit and difficulty
-            Kit kit = Kit.valueOf(NbtCompat.getString(nbt, "kit", "SWORD"));
-            Difficulty difficulty = Difficulty.valueOf(NbtCompat.getString(nbt, "difficulty", "MEDIUM"));
+            Kit kit = Kit.valueOf(yaml.getString("kit", "NODEBUFF"));
+            Difficulty difficulty = Difficulty.valueOf(yaml.getString("difficulty", "MEDIUM"));
 
-            // Load original position
-            double origX = NbtCompat.getDouble(nbt, "origX", 0.0);
-            double origY = NbtCompat.getDouble(nbt, "origY", 100.0);
-            double origZ = NbtCompat.getDouble(nbt, "origZ", 0.0);
-            float origYaw = NbtCompat.getFloat(nbt, "origYaw", 0.0f);
-            float origPitch = NbtCompat.getFloat(nbt, "origPitch", 0.0f);
+            // Load original location
+            String worldName = yaml.getString("original.world", "world");
+            World world = Bukkit.getWorld(worldName);
+            if (world == null) {
+                world = Bukkit.getWorlds().get(0); // Fallback to default world
+            }
+            double origX = yaml.getDouble("original.x", 0.0);
+            double origY = yaml.getDouble("original.y", 100.0);
+            double origZ = yaml.getDouble("original.z", 0.0);
+            float origYaw = (float) yaml.getDouble("original.yaw", 0.0);
+            float origPitch = (float) yaml.getDouble("original.pitch", 0.0);
+            Location originalLocation = new Location(world, origX, origY, origZ, origYaw, origPitch);
 
             // Load inventory
-            List<ItemStack> inventory = new ArrayList<>();
-            NbtElement inventoryElement = nbt.get("inventory");
-            if (inventoryElement instanceof NbtList inventoryList) {
-                for (int i = 0; i < inventoryList.size(); i++) {
-                    NbtCompound itemNbt = NbtCompat.getCompound(inventoryList, i);
-                    inventory.add(itemFromNbt(itemNbt));
-                }
-            }
-            // Pad to 36 slots
-            while (inventory.size() < 36) {
-                inventory.add(ItemStack.EMPTY);
-            }
+            List<?> inventoryRaw = yaml.getList("inventory");
+            List<ItemStack> inventory = deserializeItemList(inventoryRaw, 36);
 
             // Load armor
-            List<ItemStack> armor = new ArrayList<>();
-            NbtElement armorElement = nbt.get("armor");
-            if (armorElement instanceof NbtList armorList) {
-                for (int i = 0; i < armorList.size(); i++) {
-                    NbtCompound itemNbt = NbtCompat.getCompound(armorList, i);
-                    armor.add(itemFromNbt(itemNbt));
-                }
-            }
-            // Pad to 4 slots
-            while (armor.size() < 4) {
-                armor.add(ItemStack.EMPTY);
-            }
+            List<?> armorRaw = yaml.getList("armor");
+            List<ItemStack> armor = deserializeItemList(armorRaw, 4);
 
             // Load offhand
-            NbtCompound offhandNbt = NbtCompat.getCompound(nbt, "offhand");
-            ItemStack offhand = itemFromNbt(offhandNbt);
+            ItemStack offhand = null;
+            if (yaml.contains("offhand")) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> offhandMap = (Map<String, Object>) yaml.get("offhand");
+                if (offhandMap != null && !offhandMap.isEmpty()) {
+                    offhand = ItemStack.deserialize(offhandMap);
+                }
+            }
 
             // Load health and food
-            float health = NbtCompat.getFloat(nbt, "health", 20.0f);
-            int food = NbtCompat.getInt(nbt, "food", 20);
+            float health = (float) yaml.getDouble("health", 20.0);
+            int food = yaml.getInt("food", 20);
 
             // Create session from loaded data
-            ArenaSession session = new ArenaSession(playerId, kit, difficulty, origX, origY, origZ, origYaw, origPitch,
+            ArenaSession session = new ArenaSession(playerId, kit, difficulty, originalLocation,
                     inventory, armor, offhand, health, food);
 
             // Load arena center
-            if (nbt.contains("arenaX")) {
-                int arenaX = NbtCompat.getInt(nbt, "arenaX", 0);
-                int arenaY = NbtCompat.getInt(nbt, "arenaY", 200);
-                int arenaZ = NbtCompat.getInt(nbt, "arenaZ", 0);
-                session.setArenaCenter(new net.minecraft.util.math.BlockPos(arenaX, arenaY, arenaZ));
+            if (yaml.contains("arenaCenter.world")) {
+                String centerWorldName = yaml.getString("arenaCenter.world", "world");
+                World centerWorld = Bukkit.getWorld(centerWorldName);
+                if (centerWorld == null) {
+                    centerWorld = Bukkit.getWorlds().get(0);
+                }
+                double cx = yaml.getDouble("arenaCenter.x", 0.0);
+                double cy = yaml.getDouble("arenaCenter.y", 200.0);
+                double cz = yaml.getDouble("arenaCenter.z", 0.0);
+                session.setArenaCenter(new Location(centerWorld, cx, cy, cz));
             }
 
             // Load bot ID
-            String botIdStr = NbtCompat.getString(nbt, "botId", null);
+            String botIdStr = yaml.getString("botId", null);
             if (botIdStr != null && !botIdStr.isEmpty()) {
                 session.setBotId(UUID.fromString(botIdStr));
             }
 
             return session;
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
             return null;
         }
     }
 
-    public static void deletePlayerData(MinecraftServer server, UUID playerId) {
-        try {
-            Path worldPath = server.getSavePath(WorldSavePath.ROOT);
-            File playerFile = worldPath.resolve(ARENA_DATA_FOLDER).resolve(playerId.toString() + ".dat").toFile();
-            if (playerFile.exists()) {
-                playerFile.delete();
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
+    public static void deletePlayerData(UUID playerId) {
+        File file = getPlayerFile(playerId);
+        if (file.exists()) {
+            file.delete();
         }
     }
 
-    public static boolean hasPlayerData(MinecraftServer server, UUID playerId) {
-        Path worldPath = server.getSavePath(WorldSavePath.ROOT);
-        File playerFile = worldPath.resolve(ARENA_DATA_FOLDER).resolve(playerId.toString() + ".dat").toFile();
-        return playerFile.exists();
+    public static boolean hasPlayerData(UUID playerId) {
+        return getPlayerFile(playerId).exists();
     }
 }

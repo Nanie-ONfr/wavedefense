@@ -2,7 +2,7 @@ package com.wavedefense.arena;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import net.fabricmc.loader.api.FabricLoader;
+import com.wavedefense.WaveDefensePlugin;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -14,8 +14,8 @@ import java.nio.file.Path;
  */
 public class BotConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final Path CONFIG_PATH = FabricLoader.getInstance()
-            .getConfigDir().resolve("wavedefense_bot.json");
+    private static final Path CONFIG_PATH = WaveDefensePlugin.getInstance()
+            .getDataFolder().toPath().resolve("wavedefense_bot.json");
 
     private static BotConfig INSTANCE;
 

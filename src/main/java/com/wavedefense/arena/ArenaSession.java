@@ -1,13 +1,16 @@
 package com.wavedefense.arena;
 
-import net.minecraft.entity.boss.BossBar;
-import net.minecraft.entity.boss.ServerBossBar;
-import net.minecraft.item.ItemStack;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.boss.BarColor;
+import org.bukkit.boss.BarStyle;
+import org.bukkit.boss.BossBar;
+import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,23 +20,18 @@ public class ArenaSession {
     private final UUID playerId;
     private final Kit kit;
     private final Difficulty difficulty;
-    private final Vec3d originalPosition;
-    private final float originalYaw;
-    private final float originalPitch;
+    private final Location originalLocation;
     private final List<ItemStack> originalInventory;
     private final List<ItemStack> originalArmor;
     private final ItemStack originalOffhand;
     private final float originalHealth;
     private final int originalFoodLevel;
     private UUID botId;
-    private UUID bot2Id;
     private BotAI botAI;
-    private BotAI botAI2;
-    private BlockPos arenaCenter;
-    private net.minecraft.registry.RegistryKey<net.minecraft.world.World> arenaWorld;
+    private Location arenaCenter;
 
     // Combat feedback
-    private ServerBossBar bossBar;
+    private BossBar bossBar;
     private int warmupTicks;
     private boolean warmupComplete = false;
     private long fightStartTime = 0;
@@ -47,43 +45,42 @@ public class ArenaSession {
     private float lastBotHealth = 20.0f;
 
     // Constructor for new session from player
-    public ArenaSession(ServerPlayerEntity player, Kit kit, Difficulty difficulty) {
-        this.playerId = player.getUuid();
+    public ArenaSession(Player player, Kit kit, Difficulty difficulty) {
+        this.playerId = player.getUniqueId();
         this.kit = kit;
         this.difficulty = difficulty;
-        this.originalPosition = new Vec3d(player.getX(), player.getY(), player.getZ());
-        this.originalYaw = player.getYaw();
-        this.originalPitch = player.getPitch();
-        this.originalHealth = player.getHealth();
-        this.originalFoodLevel = player.getHungerManager().getFoodLevel();
+        this.originalLocation = player.getLocation().clone();
+        this.originalHealth = (float) player.getHealth();
+        this.originalFoodLevel = player.getFoodLevel();
         this.warmupTicks = BotConfig.getInstance().warmupTicks;
 
-        // Save inventory (main inventory has 36 slots)
+        // Save inventory (main inventory has 36 slots: 0-35)
         this.originalInventory = new ArrayList<>();
         for (int i = 0; i < 36; i++) {
-            originalInventory.add(player.getInventory().getStack(i).copy());
+            ItemStack stack = player.getInventory().getItem(i);
+            originalInventory.add(stack != null ? stack.clone() : null);
         }
 
-        // Save armor (slots 36-39 in inventory)
+        // Save armor (4 slots)
         this.originalArmor = new ArrayList<>();
+        ItemStack[] armorContents = player.getInventory().getArmorContents();
         for (int i = 0; i < 4; i++) {
-            originalArmor.add(player.getInventory().getStack(36 + i).copy());
+            originalArmor.add(armorContents[i] != null ? armorContents[i].clone() : null);
         }
 
         // Save offhand
-        this.originalOffhand = player.getOffHandStack().copy();
+        ItemStack offhand = player.getInventory().getItemInOffHand();
+        this.originalOffhand = offhand.getType().isAir() ? null : offhand.clone();
     }
 
     // Constructor for loading from disk
-    public ArenaSession(UUID playerId, Kit kit, Difficulty difficulty, double origX, double origY, double origZ,
-                        float origYaw, float origPitch, List<ItemStack> inventory,
-                        List<ItemStack> armor, ItemStack offhand, float health, int food) {
+    public ArenaSession(UUID playerId, Kit kit, Difficulty difficulty, Location originalLocation,
+                        List<ItemStack> inventory, List<ItemStack> armor, ItemStack offhand,
+                        float health, int food) {
         this.playerId = playerId;
         this.kit = kit;
         this.difficulty = difficulty;
-        this.originalPosition = new Vec3d(origX, origY, origZ);
-        this.originalYaw = origYaw;
-        this.originalPitch = origPitch;
+        this.originalLocation = originalLocation;
         this.originalInventory = inventory;
         this.originalArmor = armor;
         this.originalOffhand = offhand;
@@ -92,28 +89,36 @@ public class ArenaSession {
         this.warmupTicks = BotConfig.getInstance().warmupTicks;
     }
 
-    public void restore(ServerPlayerEntity player) {
+    public void restore(Player player) {
         // Clear current inventory
         player.getInventory().clear();
 
         // Restore main inventory
         for (int i = 0; i < originalInventory.size() && i < 36; i++) {
-            player.getInventory().setStack(i, originalInventory.get(i).copy());
+            ItemStack stack = originalInventory.get(i);
+            player.getInventory().setItem(i, stack != null ? stack.clone() : null);
         }
 
-        // Restore armor (slots 36-39 in player inventory)
+        // Restore armor
+        ItemStack[] armorContents = new ItemStack[4];
         for (int i = 0; i < originalArmor.size() && i < 4; i++) {
-            player.getInventory().setStack(36 + i, originalArmor.get(i).copy());
+            ItemStack stack = originalArmor.get(i);
+            armorContents[i] = stack != null ? stack.clone() : null;
         }
+        player.getInventory().setArmorContents(armorContents);
 
-        // Restore offhand (slot 40)
-        player.getInventory().setStack(40, originalOffhand.copy());
+        // Restore offhand
+        player.getInventory().setItemInOffHand(originalOffhand != null ? originalOffhand.clone() : null);
 
         // Restore health and food
         player.setHealth(originalHealth);
-        player.getHungerManager().setFoodLevel(originalFoodLevel);
+        player.setFoodLevel(originalFoodLevel);
+
+        // Teleport back to original location
+        player.teleport(originalLocation);
     }
 
+    // Getters
     public UUID getPlayerId() {
         return playerId;
     }
@@ -126,16 +131,8 @@ public class ArenaSession {
         return difficulty;
     }
 
-    public Vec3d getOriginalPosition() {
-        return originalPosition;
-    }
-
-    public float getOriginalYaw() {
-        return originalYaw;
-    }
-
-    public float getOriginalPitch() {
-        return originalPitch;
+    public Location getOriginalLocation() {
+        return originalLocation;
     }
 
     public List<ItemStack> getOriginalInventory() {
@@ -174,69 +171,49 @@ public class ArenaSession {
         this.botAI = botAI;
     }
 
-    public UUID getBot2Id() {
-        return bot2Id;
-    }
-
-    public void setBot2Id(UUID bot2Id) {
-        this.bot2Id = bot2Id;
-    }
-
-    public BotAI getBotAI2() {
-        return botAI2;
-    }
-
-    public void setBotAI2(BotAI botAI2) {
-        this.botAI2 = botAI2;
-    }
-
-    public BlockPos getArenaCenter() {
+    public Location getArenaCenter() {
         return arenaCenter;
     }
 
-    public void setArenaCenter(BlockPos arenaCenter) {
+    public void setArenaCenter(Location arenaCenter) {
         this.arenaCenter = arenaCenter;
     }
 
-    public net.minecraft.registry.RegistryKey<net.minecraft.world.World> getArenaWorld() {
-        return arenaWorld;
-    }
-
-    public void setArenaWorld(net.minecraft.registry.RegistryKey<net.minecraft.world.World> arenaWorld) {
-        this.arenaWorld = arenaWorld;
-    }
-
     // Bossbar methods
-    public void createBossBar(ServerPlayerEntity player) {
-        bossBar = new ServerBossBar(
-            Text.literal(kit.getName() + " Bot").formatted(Formatting.RED, Formatting.BOLD),
-            BossBar.Color.RED,
-            BossBar.Style.PROGRESS
+    public void createBossBar(Player player) {
+        bossBar = Bukkit.createBossBar(
+            kit.getName() + " Bot",
+            BarColor.RED,
+            BarStyle.SOLID
         );
         bossBar.addPlayer(player);
     }
 
     public void updateBossBar(float healthPercent, String botName) {
         if (bossBar != null) {
-            bossBar.setPercent(Math.max(0, Math.min(1, healthPercent)));
-            bossBar.setName(Text.literal(botName + " ")
-                .formatted(Formatting.RED, Formatting.BOLD)
-                .append(Text.literal(String.format("%.0f%%", healthPercent * 100))
-                    .formatted(getHealthColor(healthPercent))));
-        }
-    }
+            bossBar.setProgress(Math.max(0, Math.min(1, healthPercent)));
+            bossBar.setTitle(botName + " " + String.format("%.0f%%", healthPercent * 100));
 
-    private Formatting getHealthColor(float percent) {
-        if (percent > 0.5f) return Formatting.GREEN;
-        if (percent > 0.25f) return Formatting.YELLOW;
-        return Formatting.RED;
+            // Update color based on health
+            if (healthPercent > 0.5f) {
+                bossBar.setColor(BarColor.GREEN);
+            } else if (healthPercent > 0.25f) {
+                bossBar.setColor(BarColor.YELLOW);
+            } else {
+                bossBar.setColor(BarColor.RED);
+            }
+        }
     }
 
     public void removeBossBar() {
         if (bossBar != null) {
-            bossBar.clearPlayers();
+            bossBar.removeAll();
             bossBar = null;
         }
+    }
+
+    public BossBar getBossBar() {
+        return bossBar;
     }
 
     // Warmup methods

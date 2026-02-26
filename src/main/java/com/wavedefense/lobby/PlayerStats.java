@@ -1,24 +1,19 @@
 package com.wavedefense.lobby;
 
-import com.wavedefense.util.NbtCompat;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtIo;
-import net.minecraft.nbt.NbtSizeTracker;
-import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.WorldSavePath;
+import com.wavedefense.WaveDefensePlugin;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
+import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Player;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
 public class PlayerStats {
-    private static final String STATS_FOLDER = "wavedefense_stats";
     private static final Map<UUID, Stats> cache = new HashMap<>();
 
     public static class Stats {
@@ -39,85 +34,95 @@ public class PlayerStats {
         }
     }
 
-    public static Stats getStats(MinecraftServer server, UUID playerId) {
+    private static File getDataFolder() {
+        File folder = new File(WaveDefensePlugin.getInstance().getDataFolder(), "stats");
+        if (!folder.exists()) {
+            folder.mkdirs();
+        }
+        return folder;
+    }
+
+    private static File getStatsFile(UUID playerId) {
+        return new File(getDataFolder(), playerId.toString() + ".yml");
+    }
+
+    public static Stats getStats(UUID playerId) {
         if (cache.containsKey(playerId)) {
             return cache.get(playerId);
         }
 
-        Stats stats = loadStats(server, playerId);
+        Stats stats = loadStats(playerId);
         cache.put(playerId, stats);
         return stats;
     }
 
-    public static void addWin(MinecraftServer server, UUID playerId) {
-        Stats stats = getStats(server, playerId);
+    public static void addWin(UUID playerId) {
+        Stats stats = getStats(playerId);
         stats.wins++;
         stats.gamesPlayed++;
         stats.kills++;
-        saveStats(server, playerId, stats);
+        saveStats(playerId, stats);
     }
 
-    public static void addLoss(MinecraftServer server, UUID playerId) {
-        Stats stats = getStats(server, playerId);
+    public static void addLoss(UUID playerId) {
+        Stats stats = getStats(playerId);
         stats.losses++;
         stats.gamesPlayed++;
         stats.deaths++;
-        saveStats(server, playerId, stats);
+        saveStats(playerId, stats);
     }
 
-    public static void showStats(ServerPlayerEntity player) {
-        MinecraftServer server = player.getCommandSource().getServer();
-        Stats stats = getStats(server, player.getUuid());
+    public static void showStats(Player player) {
+        Stats stats = getStats(player.getUniqueId());
 
-        player.sendMessage(Text.literal(""), false);
-        player.sendMessage(Text.literal("=== DEINE STATISTIKEN ===").formatted(Formatting.GOLD, Formatting.BOLD), false);
-        player.sendMessage(Text.literal("Spiele: " + stats.gamesPlayed).formatted(Formatting.YELLOW), false);
-        player.sendMessage(Text.literal("Siege: " + stats.wins).formatted(Formatting.GREEN), false);
-        player.sendMessage(Text.literal("Niederlagen: " + stats.losses).formatted(Formatting.RED), false);
-        player.sendMessage(Text.literal("Win-Rate: " + String.format("%.1f", stats.getWinRate()) + "%").formatted(Formatting.AQUA), false);
-        player.sendMessage(Text.literal("K/D: " + String.format("%.2f", stats.getKD())).formatted(Formatting.LIGHT_PURPLE), false);
-        player.sendMessage(Text.literal(""), false);
+        player.sendMessage(Component.empty());
+        player.sendMessage(Component.text("=== DEINE STATISTIKEN ===")
+                .color(NamedTextColor.GOLD)
+                .decorate(TextDecoration.BOLD));
+        player.sendMessage(Component.text("Spiele: " + stats.gamesPlayed)
+                .color(NamedTextColor.YELLOW));
+        player.sendMessage(Component.text("Siege: " + stats.wins)
+                .color(NamedTextColor.GREEN));
+        player.sendMessage(Component.text("Niederlagen: " + stats.losses)
+                .color(NamedTextColor.RED));
+        player.sendMessage(Component.text("Win-Rate: " + String.format("%.1f", stats.getWinRate()) + "%")
+                .color(NamedTextColor.AQUA));
+        player.sendMessage(Component.text("K/D: " + String.format("%.2f", stats.getKD()))
+                .color(NamedTextColor.LIGHT_PURPLE));
+        player.sendMessage(Component.empty());
     }
 
-    private static Stats loadStats(MinecraftServer server, UUID playerId) {
+    private static Stats loadStats(UUID playerId) {
+        File file = getStatsFile(playerId);
+        if (!file.exists()) {
+            return new Stats();
+        }
+
         try {
-            Path worldPath = server.getSavePath(WorldSavePath.ROOT);
-            File statsFile = worldPath.resolve(STATS_FOLDER).resolve(playerId.toString() + ".dat").toFile();
-
-            if (!statsFile.exists()) {
-                return new Stats();
-            }
-
-            NbtCompound nbt = NbtIo.readCompressed(statsFile.toPath(), NbtSizeTracker.ofUnlimitedBytes());
+            YamlConfiguration yaml = YamlConfiguration.loadConfiguration(file);
             Stats stats = new Stats();
-            stats.wins = NbtCompat.getInt(nbt, "wins", 0);
-            stats.losses = NbtCompat.getInt(nbt, "losses", 0);
-            stats.kills = NbtCompat.getInt(nbt, "kills", 0);
-            stats.deaths = NbtCompat.getInt(nbt, "deaths", 0);
-            stats.gamesPlayed = NbtCompat.getInt(nbt, "gamesPlayed", 0);
+            stats.wins = yaml.getInt("wins", 0);
+            stats.losses = yaml.getInt("losses", 0);
+            stats.kills = yaml.getInt("kills", 0);
+            stats.deaths = yaml.getInt("deaths", 0);
+            stats.gamesPlayed = yaml.getInt("gamesPlayed", 0);
             return stats;
-        } catch (IOException e) {
+        } catch (Exception e) {
             return new Stats();
         }
     }
 
-    private static void saveStats(MinecraftServer server, UUID playerId, Stats stats) {
+    private static void saveStats(UUID playerId, Stats stats) {
         try {
-            Path worldPath = server.getSavePath(WorldSavePath.ROOT);
-            File statsFolder = worldPath.resolve(STATS_FOLDER).toFile();
-            if (!statsFolder.exists()) {
-                statsFolder.mkdirs();
-            }
+            File file = getStatsFile(playerId);
+            YamlConfiguration yaml = new YamlConfiguration();
+            yaml.set("wins", stats.wins);
+            yaml.set("losses", stats.losses);
+            yaml.set("kills", stats.kills);
+            yaml.set("deaths", stats.deaths);
+            yaml.set("gamesPlayed", stats.gamesPlayed);
 
-            File statsFile = new File(statsFolder, playerId.toString() + ".dat");
-            NbtCompound nbt = new NbtCompound();
-            nbt.putInt("wins", stats.wins);
-            nbt.putInt("losses", stats.losses);
-            nbt.putInt("kills", stats.kills);
-            nbt.putInt("deaths", stats.deaths);
-            nbt.putInt("gamesPlayed", stats.gamesPlayed);
-
-            NbtIo.writeCompressed(nbt, statsFile.toPath());
+            yaml.save(file);
             cache.put(playerId, stats);
         } catch (IOException e) {
             e.printStackTrace();

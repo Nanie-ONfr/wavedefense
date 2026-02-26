@@ -1,105 +1,59 @@
 plugins {
-    id 'fabric-loom' version '1.13.6'
-    id 'maven-publish'
+    id 'java'
     id 'com.modrinth.minotaur' version '2.8.7'
 }
 
-version = project.mod_version
-group = project.maven_group
-
-base {
-    archivesName = project.archives_base_name
-}
+group = 'com.wavedefense'
+version = '2.0.0'
 
 repositories {
     mavenCentral()
-}
-
-loom {
-    splitEnvironmentSourceSets()
-
-    mods {
-        "wavedefense" {
-            sourceSet sourceSets.main
-            sourceSet sourceSets.client
-        }
-    }
+    maven { url = 'https://repo.papermc.io/repository/maven-public/' }
 }
 
 dependencies {
-    minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-}
-
-processResources {
-    inputs.property "version", project.version
-
-    filesMatching("fabric.mod.json") {
-        expand "version": project.version
-    }
-}
-
-tasks.withType(JavaCompile).configureEach {
-    it.options.release = 21
+    compileOnly 'io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT'
 }
 
 java {
-    withSourcesJar()
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 21
+    options.encoding = 'UTF-8'
 }
 
 jar {
     from("LICENSE") {
-        rename { "${it}_${project.base.archivesName.get()}" }
+        rename { "${it}_wavedefense" }
     }
 }
 
-publishing {
-    publications {
-        create("mavenJava", MavenPublication) {
-            artifactId = project.archives_base_name
-            from components.java
-        }
-    }
-    repositories {
+processResources {
+    inputs.property "version", project.version
+    filesMatching("plugin.yml") {
+        expand "version": project.version
     }
 }
 
 modrinth {
     token = System.getenv("MODRINTH_TOKEN") ?: project.findProperty("modrinth_token") ?: ""
     projectId = "wave-defend"
-    versionNumber = project.version
-    versionName = "Wave Defense ${project.version}"
+    versionNumber = "${version}"
+    versionName = "Wave Defense ${version} (Paper)"
     versionType = "release"
-    uploadFile = remapJar
-    gameVersions = [project.minecraft_version]
-    loaders = ["fabric"]
-    dependencies {
-        required.project "fabric-api"
-    }
+    uploadFile = jar
+    gameVersions = ["1.21.4"]
+    loaders = ["paper"]
     changelog = """
-## v1.1.1 - Bug Fixes & Performance
+## v2.0.0 - Paper Plugin Conversion
 
-### Bug Fixes
-- Fix PRACTICE difficulty causing crashes (missing switch cases)
-- Fix SurvivalArena losing tracked bots on tick
-- Fix MobSpawner.cleanupMobs not removing entities
-- Fix ConcurrentModificationException in tick loops
-
-### Performance
-- Eliminate HashMap copies in all tick loops
-- Single entity lookup per arena tick (was 2)
-- Enderman cleanup every 2s instead of every tick
-- Spawn cooldown in SurvivalArena
-- ThreadLocalRandom + cached difficulty values in BotAI
-
-### Improvements
-- Full PRACTICE difficulty mode (slow, no dodge, no heal)
-- Bot looks at target for better hit detection
-- PRACTICE added to lobby difficulty cycle
+### Changes
+- Converted from Fabric mod to Paper plugin
+- Added Player vs Player arena mode
+- Added potions to Mace kit
+- Removed Wave Defense mode (Arena + Survival only)
+- All 8 kits preserved: Mace, Sword, Axe, Bow, Crystal, UHC, Shield, Potion
 """
 }
-

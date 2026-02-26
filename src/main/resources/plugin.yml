@@ -1,0 +1,16 @@
+name: WaveDefense
+version: '${version}'
+main: com.wavedefense.WaveDefensePlugin
+api-version: '1.21'
+description: PvP Arena and Survival with 8 kits and bot AI
+authors:
+  - WaveDefense Team
+commands:
+  wavedefense:
+    description: Wave Defense main command
+    aliases: [wd]
+    usage: /wd help
+permissions:
+  wavedefense.admin:
+    description: Admin commands
+    default: op

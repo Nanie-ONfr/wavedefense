@@ -1,43 +1,69 @@
 package com.wavedefense.lobby;
 
+import com.wavedefense.WaveDefensePlugin;
+import com.wavedefense.arena.ArenaManager;
 import com.wavedefense.arena.Difficulty;
 import com.wavedefense.arena.Kit;
-import net.minecraft.block.Blocks;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.decoration.ArmorStandEntity;
-import net.minecraft.entity.passive.VillagerEntity;
-import net.minecraft.entity.passive.WolfEntity;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
+
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.World;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.entity.ArmorStand;
+import org.bukkit.entity.Player;
+import org.bukkit.util.Vector;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 public class LobbyManager {
-    private static final BlockPos LOBBY_SPAWN = new BlockPos(0, 101, 0);
+    private static final int LOBBY_X = 0;
+    private static final int LOBBY_Y = 101;
+    private static final int LOBBY_Z = 0;
     private boolean lobbyCreated = false;
     private final Map<UUID, Kit> selectedKits = new HashMap<>();
     private final Map<UUID, Difficulty> selectedDifficulties = new HashMap<>();
 
-    // Use The End for lobby (same as arena)
-    public static final RegistryKey<World> LOBBY_DIMENSION = World.END;
+    /**
+     * Gets the lobby world (same as arena world).
+     */
+    private World getLobbyWorld() {
+        World world = ArenaManager.getOrCreateArenaWorld();
+        if (world == null) {
+            world = Bukkit.getWorlds().get(0);
+        }
+        return world;
+    }
 
-    public void createLobby(MinecraftServer server) {
+    public void createLobby() {
         if (lobbyCreated) return;
 
-        ServerWorld world = server.getWorld(LOBBY_DIMENSION);
-        if (world == null) {
-            world = server.getOverworld();
-        }
+        World world = getLobbyWorld();
+        if (world == null) return;
 
-        BlockPos center = LOBBY_SPAWN;
+        setupLobby(world);
+        lobbyCreated = true;
+    }
+
+    /**
+     * Creates the lobby structure in the given world.
+     * - Circular platform (radius 15) of polished blackstone
+     * - Gold block center (5x5)
+     * - Sea lanterns underneath
+     * - 8 armor stands in a circle, one per kit, on colored platforms
+     * - Barrier walls around lobby
+     */
+    public void setupLobby(World world) {
+        int centerX = LOBBY_X;
+        int centerY = LOBBY_Y;
+        int centerZ = LOBBY_Z;
 
         // Create lobby platform - circular design
         int radius = 15;
@@ -45,17 +71,17 @@ public class LobbyManager {
             for (int dz = -radius; dz <= radius; dz++) {
                 if (dx * dx + dz * dz <= radius * radius) {
                     // Main floor
-                    world.setBlockState(center.add(dx, 0, dz), Blocks.POLISHED_BLACKSTONE.getDefaultState());
+                    world.getBlockAt(centerX + dx, centerY, centerZ + dz).setType(Material.POLISHED_BLACKSTONE);
                     // Light under floor
-                    world.setBlockState(center.add(dx, -1, dz), Blocks.SEA_LANTERN.getDefaultState());
+                    world.getBlockAt(centerX + dx, centerY - 1, centerZ + dz).setType(Material.SEA_LANTERN);
                 }
             }
         }
 
-        // Center platform (spawn)
+        // Center platform (spawn) - 5x5 gold blocks
         for (int dx = -2; dx <= 2; dx++) {
             for (int dz = -2; dz <= 2; dz++) {
-                world.setBlockState(center.add(dx, 0, dz), Blocks.GOLD_BLOCK.getDefaultState());
+                world.getBlockAt(centerX + dx, centerY, centerZ + dz).setType(Material.GOLD_BLOCK);
             }
         }
 
@@ -66,19 +92,19 @@ public class LobbyManager {
         for (int i = 0; i < kits.length; i++) {
             Kit kit = kits[i];
             double angle = i * angleStep;
-            int kitX = (int) (Math.cos(angle) * 10);
-            int kitZ = (int) (Math.sin(angle) * 10);
-            BlockPos kitPos = center.add(kitX, 0, kitZ);
+            int kitX = centerX + (int) (Math.cos(angle) * 10);
+            int kitZ = centerZ + (int) (Math.sin(angle) * 10);
 
-            // Kit platform
+            // Kit platform - colored per kit
+            Material platformMaterial = getKitPlatformMaterial(kit);
             for (int dx = -2; dx <= 2; dx++) {
                 for (int dz = -2; dz <= 2; dz++) {
-                    world.setBlockState(kitPos.add(dx, 0, dz), getKitBlockColor(kit));
+                    world.getBlockAt(kitX + dx, centerY, kitZ + dz).setType(platformMaterial);
                 }
             }
 
-            // Spawn armor stand with kit name
-            spawnKitDisplay(world, kitPos.add(0, 1, 0), kit);
+            // Spawn armor stand display for this kit
+            spawnKitDisplay(world, kitX, centerY + 1, kitZ, kit);
         }
 
         // Barrier walls around lobby
@@ -86,106 +112,137 @@ public class LobbyManager {
             for (int dy = 1; dy <= 10; dy++) {
                 if (dx == -radius - 1 || dx == radius + 1) {
                     for (int dz = -radius - 1; dz <= radius + 1; dz++) {
-                        world.setBlockState(center.add(dx, dy, dz), Blocks.BARRIER.getDefaultState());
+                        world.getBlockAt(centerX + dx, centerY + dy, centerZ + dz).setType(Material.BARRIER);
                     }
                 } else {
-                    world.setBlockState(center.add(dx, dy, -radius - 1), Blocks.BARRIER.getDefaultState());
-                    world.setBlockState(center.add(dx, dy, radius + 1), Blocks.BARRIER.getDefaultState());
+                    world.getBlockAt(centerX + dx, centerY + dy, centerZ - radius - 1).setType(Material.BARRIER);
+                    world.getBlockAt(centerX + dx, centerY + dy, centerZ + radius + 1).setType(Material.BARRIER);
                 }
             }
         }
-
-        lobbyCreated = true;
     }
 
-    private net.minecraft.block.BlockState getKitBlockColor(Kit kit) {
+    /**
+     * Returns the platform Material color for a given kit.
+     */
+    private Material getKitPlatformMaterial(Kit kit) {
         return switch (kit) {
-            case MACE -> Blocks.PURPLE_CONCRETE.getDefaultState();
-            case SWORD -> Blocks.BLUE_CONCRETE.getDefaultState();
-            case AXE -> Blocks.BROWN_CONCRETE.getDefaultState();
-            case BOW -> Blocks.YELLOW_CONCRETE.getDefaultState();
-            case CRYSTAL -> Blocks.MAGENTA_CONCRETE.getDefaultState();
-            case UHC -> Blocks.GREEN_CONCRETE.getDefaultState();
-            case SHIELD -> Blocks.CYAN_CONCRETE.getDefaultState();
-            case POTION -> Blocks.PINK_CONCRETE.getDefaultState();
+            case NODEBUFF -> Material.BLUE_CONCRETE;
+            case BUILDUHC -> Material.GREEN_CONCRETE;
+            case CRYSTAL -> Material.MAGENTA_CONCRETE;
+            case BOXING -> Material.RED_CONCRETE;
+            case GAPPLE -> Material.YELLOW_CONCRETE;
+            case SUMO -> Material.LIME_CONCRETE;
+            case COMBO -> Material.ORANGE_CONCRETE;
+            case BRIDGE -> Material.BROWN_CONCRETE;
+            case AXE_SHIELD -> Material.CYAN_CONCRETE;
+            case MACE -> Material.PURPLE_CONCRETE;
+            case ANCHOR -> Material.BLACK_CONCRETE;
+            case ARCHER -> Material.WHITE_CONCRETE;
+            case CLASSIC -> Material.LIGHT_GRAY_CONCRETE;
+            case SOUP -> Material.PINK_CONCRETE;
+            case DEBUFF -> Material.GRAY_CONCRETE;
         };
     }
 
-    private void spawnKitDisplay(ServerWorld world, BlockPos pos, Kit kit) {
-        // Create invisible armor stand with name
-        ArmorStandEntity stand = new ArmorStandEntity(EntityType.ARMOR_STAND, world);
-        stand.setPosition(pos.getX() + 0.5, pos.getY() + 1.5, pos.getZ() + 0.5);
-        stand.setCustomName(Text.literal(kit.getName()).formatted(Formatting.GOLD, Formatting.BOLD));
-        stand.setCustomNameVisible(true);
-        stand.setInvisible(true);
-        stand.setInvulnerable(true);
-        stand.setNoGravity(true);
-        world.spawnEntity(stand);
+    /**
+     * Spawns the armor stand display for a kit (name + description lines).
+     */
+    private void spawnKitDisplay(World world, int x, int y, int z, Kit kit) {
+        // Kit name armor stand
+        world.spawn(new Location(world, x + 0.5, y + 1.5, z + 0.5), ArmorStand.class, stand -> {
+            stand.customName(Component.text(kit.getName())
+                    .color(NamedTextColor.GOLD)
+                    .decorate(TextDecoration.BOLD));
+            stand.setCustomNameVisible(true);
+            stand.setInvisible(true);
+            stand.setInvulnerable(true);
+            stand.setGravity(false);
+        });
 
-        // Description armor stand - line 1
-        ArmorStandEntity desc = new ArmorStandEntity(EntityType.ARMOR_STAND, world);
-        desc.setPosition(pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5);
-        desc.setCustomName(Text.literal("Rechtsklick = Spielen").formatted(Formatting.GREEN));
-        desc.setCustomNameVisible(true);
-        desc.setInvisible(true);
-        desc.setInvulnerable(true);
-        desc.setNoGravity(true);
-        world.spawnEntity(desc);
+        // Description line 1
+        world.spawn(new Location(world, x + 0.5, y + 1.0, z + 0.5), ArmorStand.class, stand -> {
+            stand.customName(Component.text("Rechtsklick = Spielen")
+                    .color(NamedTextColor.GREEN));
+            stand.setCustomNameVisible(true);
+            stand.setInvisible(true);
+            stand.setInvulnerable(true);
+            stand.setGravity(false);
+        });
 
-        // Description armor stand - line 2
-        ArmorStandEntity desc2 = new ArmorStandEntity(EntityType.ARMOR_STAND, world);
-        desc2.setPosition(pos.getX() + 0.5, pos.getY() + 0.7, pos.getZ() + 0.5);
-        desc2.setCustomName(Text.literal("Shift+Klick = Schwierigkeit").formatted(Formatting.GRAY));
-        desc2.setCustomNameVisible(true);
-        desc2.setInvisible(true);
-        desc2.setInvulnerable(true);
-        desc2.setNoGravity(true);
-        world.spawnEntity(desc2);
+        // Description line 2
+        world.spawn(new Location(world, x + 0.5, y + 0.7, z + 0.5), ArmorStand.class, stand -> {
+            stand.customName(Component.text("Shift+Klick = Schwierigkeit")
+                    .color(NamedTextColor.GRAY));
+            stand.setCustomNameVisible(true);
+            stand.setInvisible(true);
+            stand.setInvulnerable(true);
+            stand.setGravity(false);
+        });
     }
 
-    public void teleportToLobby(ServerPlayerEntity player) {
-        MinecraftServer server = player.getCommandSource().getServer();
-        ServerWorld lobbyWorld = server.getWorld(LOBBY_DIMENSION);
-        if (lobbyWorld == null) {
-            lobbyWorld = server.getOverworld();
-        }
+    /**
+     * Teleports a player to the lobby spawn and resets their state.
+     */
+    public void teleportToLobby(Player player) {
+        World lobbyWorld = getLobbyWorld();
 
         // Create lobby if not exists
-        createLobby(server);
+        createLobby();
 
-        // Clear inventory and give lobby items
+        // Clear inventory
         player.getInventory().clear();
 
-        // Teleport
-        player.teleport(lobbyWorld, LOBBY_SPAWN.getX() + 0.5, LOBBY_SPAWN.getY() + 1, LOBBY_SPAWN.getZ() + 0.5,
-                java.util.Set.of(), 0, 0, true);
+        // Teleport to lobby spawn
+        Location lobbySpawn = new Location(lobbyWorld, LOBBY_X + 0.5, LOBBY_Y + 1, LOBBY_Z + 0.5, 0, 0);
+        player.teleport(lobbySpawn);
+
+        // Stop velocity
+        player.setVelocity(new Vector(0, 0, 0));
+
+        // Reset health and food
+        player.setHealth(Objects.requireNonNull(player.getAttribute(Attribute.MAX_HEALTH)).getValue());
+        player.setFoodLevel(20);
 
         // Send welcome message
-        player.sendMessage(Text.literal(""), false);
-        player.sendMessage(Text.literal("=== WAVE DEFENSE PVP ===").formatted(Formatting.GOLD, Formatting.BOLD), false);
-        player.sendMessage(Text.literal("Rechtsklick auf Kit-Schild = Spielen").formatted(Formatting.GREEN), false);
-        player.sendMessage(Text.literal("Shift + Rechtsklick = Schwierigkeit ändern").formatted(Formatting.YELLOW), false);
-        player.sendMessage(Text.literal("Oder nutze: /wd arena <kit> [easy/medium/hard]").formatted(Formatting.GRAY), false);
-        player.sendMessage(Text.literal(""), false);
+        player.sendMessage(Component.empty());
+        player.sendMessage(Component.text("=== WAVE DEFENSE PVP ===")
+                .color(NamedTextColor.GOLD)
+                .decorate(TextDecoration.BOLD));
+        player.sendMessage(Component.text("Rechtsklick auf Kit-Schild = Spielen")
+                .color(NamedTextColor.GREEN));
+        player.sendMessage(Component.text("Shift + Rechtsklick = Schwierigkeit aendern")
+                .color(NamedTextColor.YELLOW));
+        player.sendMessage(Component.text("Oder nutze: /wd arena <kit> [easy/medium/hard]")
+                .color(NamedTextColor.GRAY));
+        player.sendMessage(Component.empty());
     }
 
     public Kit getSelectedKit(UUID playerId) {
-        return selectedKits.getOrDefault(playerId, Kit.SWORD);
+        return selectedKits.getOrDefault(playerId, Kit.NODEBUFF);
     }
 
     public void setSelectedKit(UUID playerId, Kit kit) {
         selectedKits.put(playerId, kit);
     }
 
-    public BlockPos getLobbySpawn() {
-        return LOBBY_SPAWN;
+    /**
+     * Returns the lobby spawn location.
+     */
+    public Location getLobbySpawn() {
+        World world = getLobbyWorld();
+        return new Location(world, LOBBY_X + 0.5, LOBBY_Y + 1, LOBBY_Z + 0.5, 0, 0);
     }
 
-    public boolean isInLobby(ServerPlayerEntity player) {
-        BlockPos playerPos = player.getBlockPos();
-        int dx = Math.abs(playerPos.getX() - LOBBY_SPAWN.getX());
-        int dz = Math.abs(playerPos.getZ() - LOBBY_SPAWN.getZ());
-        return dx <= 20 && dz <= 20 && playerPos.getY() >= LOBBY_SPAWN.getY() - 5 && playerPos.getY() <= LOBBY_SPAWN.getY() + 15;
+    /**
+     * Checks if a player is currently within the lobby area.
+     */
+    public boolean isInLobby(Player player) {
+        Location loc = player.getLocation();
+        int dx = Math.abs(loc.getBlockX() - LOBBY_X);
+        int dz = Math.abs(loc.getBlockZ() - LOBBY_Z);
+        int py = loc.getBlockY();
+        return dx <= 20 && dz <= 20 && py >= LOBBY_Y - 5 && py <= LOBBY_Y + 15;
     }
 
     public Difficulty getSelectedDifficulty(UUID playerId) {
@@ -194,6 +251,32 @@ public class LobbyManager {
 
     public void setSelectedDifficulty(UUID playerId, Difficulty difficulty) {
         selectedDifficulties.put(playerId, difficulty);
+    }
+
+    /**
+     * Cycles the selected difficulty for a player and returns the new difficulty.
+     */
+    public void handleArmorStandInteraction(Player player, ArmorStand armorStand) {
+        // Find which kit this armor stand represents
+        for (Kit kit : Kit.values()) {
+            Component kitName = Component.text(kit.getName())
+                    .color(NamedTextColor.GOLD)
+                    .decorate(TextDecoration.BOLD);
+            Component standName = armorStand.customName();
+            if (standName != null && standName.equals(kitName)) {
+                if (player.isSneaking()) {
+                    // Cycle difficulty
+                    Difficulty newDiff = cycleDifficulty(player.getUniqueId());
+                    player.sendMessage(Component.text("Schwierigkeit: " + newDiff.getName())
+                            .color(WaveDefensePlugin.getDifficultyColor(newDiff)));
+                } else {
+                    // Start arena with this kit
+                    Difficulty diff = getSelectedDifficulty(player.getUniqueId());
+                    WaveDefensePlugin.getInstance().getArenaManager().startArena(player, kit, diff);
+                }
+                return;
+            }
+        }
     }
 
     public Difficulty cycleDifficulty(UUID playerId) {
