@@ -77,35 +77,37 @@ public enum Kit {
 
         switch (this) {
             case NODEBUFF -> {
-                // Diamond Sword Sharp5 Fire2 Unbreaking3
+                // Diamond Sword Sharp3 Unbreaking3 (kein Fire Aspect - Standard Practice Meta)
                 ItemStack sword = new ItemStack(Material.DIAMOND_SWORD);
-                enchant(sword, Enchantment.SHARPNESS, 5, Enchantment.FIRE_ASPECT, 2, Enchantment.UNBREAKING, 3);
+                enchant(sword, Enchantment.SHARPNESS, 3, Enchantment.UNBREAKING, 3);
 
                 player.getInventory().setItem(0, sword);
                 player.getInventory().setItem(1, new ItemStack(Material.ENDER_PEARL, 16));
-                player.getInventory().setItem(2, createPotion(PotionType.LONG_SWIFTNESS, 1));
+                // 3x Speed II (1:30)
+                player.getInventory().setItem(2, createPotion(PotionType.STRONG_SWIFTNESS, 1));
                 player.getInventory().setItem(3, createPotion(PotionType.STRONG_SWIFTNESS, 1));
-                player.getInventory().setItem(4, createPotion(PotionType.LONG_FIRE_RESISTANCE, 1));
-                // Slots 5-7: Splash Healing
-                player.getInventory().setItem(5, createSplashPotion(PotionType.STRONG_HEALING, 1));
+                player.getInventory().setItem(4, createPotion(PotionType.STRONG_SWIFTNESS, 1));
+                // 1x Fire Resistance (8:00)
+                player.getInventory().setItem(5, createPotion(PotionType.LONG_FIRE_RESISTANCE, 1));
+                // Slots 6-7: Splash Healing
                 player.getInventory().setItem(6, createSplashPotion(PotionType.STRONG_HEALING, 1));
                 player.getInventory().setItem(7, createSplashPotion(PotionType.STRONG_HEALING, 1));
                 player.getInventory().setItem(8, new ItemStack(Material.COOKED_BEEF, 64));
 
-                // Rows 2-3: Fill with Splash Healing (28 total, 3 already placed = 25 more)
-                for (int i = 9; i < 34 && i < 36; i++) {
+                // Rows 2-4: Fill rest with Splash Healing II (~27 pots)
+                for (int i = 9; i < 36; i++) {
                     player.getInventory().setItem(i, createSplashPotion(PotionType.STRONG_HEALING, 1));
                 }
 
-                // Diamond Armor Prot4 Unbreaking3, Boots also Feather Falling 4
+                // Diamond Armor Prot2 Unbreaking3 (Standard Practice - kein Feather Falling)
                 ItemStack helmet = new ItemStack(Material.DIAMOND_HELMET);
-                enchant(helmet, Enchantment.PROTECTION, 4, Enchantment.UNBREAKING, 3);
+                enchant(helmet, Enchantment.PROTECTION, 2, Enchantment.UNBREAKING, 3);
                 ItemStack chest = new ItemStack(Material.DIAMOND_CHESTPLATE);
-                enchant(chest, Enchantment.PROTECTION, 4, Enchantment.UNBREAKING, 3);
+                enchant(chest, Enchantment.PROTECTION, 2, Enchantment.UNBREAKING, 3);
                 ItemStack legs = new ItemStack(Material.DIAMOND_LEGGINGS);
-                enchant(legs, Enchantment.PROTECTION, 4, Enchantment.UNBREAKING, 3);
+                enchant(legs, Enchantment.PROTECTION, 2, Enchantment.UNBREAKING, 3);
                 ItemStack boots = new ItemStack(Material.DIAMOND_BOOTS);
-                enchant(boots, Enchantment.PROTECTION, 4, Enchantment.FEATHER_FALLING, 4, Enchantment.UNBREAKING, 3);
+                enchant(boots, Enchantment.PROTECTION, 2, Enchantment.UNBREAKING, 3);
 
                 player.getInventory().setHelmet(helmet);
                 player.getInventory().setChestplate(chest);
@@ -175,12 +177,17 @@ public enum Kit {
                 player.getInventory().setItem(6, bow);
                 player.getInventory().setItem(7, new ItemStack(Material.GOLDEN_APPLE, 64));
                 player.getInventory().setItem(8, new ItemStack(Material.TOTEM_OF_UNDYING));
+                // Row 2: Ender Pearls + extra Obsidian
+                player.getInventory().setItem(9, new ItemStack(Material.ENDER_PEARL, 16));
+                player.getInventory().setItem(10, new ItemStack(Material.OBSIDIAN, 64));
+                player.getInventory().setItem(11, new ItemStack(Material.END_CRYSTAL, 64));
+                player.getInventory().setItem(12, new ItemStack(Material.GOLDEN_APPLE, 64));
 
-                // Armor: Helmet BlastProt4, Chest Prot4, Legs BlastProt4, Boots BlastProt4
+                // Full Netherite BlastProt4 (alle Teile - Standard Crystal Meta)
                 ItemStack helmet = new ItemStack(Material.NETHERITE_HELMET);
                 enchant(helmet, Enchantment.BLAST_PROTECTION, 4);
                 ItemStack chest = new ItemStack(Material.NETHERITE_CHESTPLATE);
-                enchant(chest, Enchantment.PROTECTION, 4);
+                enchant(chest, Enchantment.BLAST_PROTECTION, 4);
                 ItemStack legs = new ItemStack(Material.NETHERITE_LEGGINGS);
                 enchant(legs, Enchantment.BLAST_PROTECTION, 4);
                 ItemStack boots = new ItemStack(Material.NETHERITE_BOOTS);
@@ -199,24 +206,27 @@ public enum Kit {
                 player.getInventory().setItem(0, sword);
             }
             case GAPPLE -> {
-                // Diamond Sword Sharp5
+                // Diamond Sword Sharp5 Unb3 FA2 (Standard Gapple Meta)
                 ItemStack sword = new ItemStack(Material.DIAMOND_SWORD);
-                enchant(sword, Enchantment.SHARPNESS, 5);
+                enchant(sword, Enchantment.SHARPNESS, 5, Enchantment.UNBREAKING, 3, Enchantment.FIRE_ASPECT, 2);
 
                 player.getInventory().setItem(0, sword);
                 player.getInventory().setItem(1, new ItemStack(Material.ENCHANTED_GOLDEN_APPLE, 64));
+                // 2x Speed II (8:00) + 2x Strength II (8:00)
                 player.getInventory().setItem(2, createPotion(PotionType.LONG_SWIFTNESS, 1));
-                player.getInventory().setItem(3, createPotion(PotionType.STRONG_STRENGTH, 1));
+                player.getInventory().setItem(3, createPotion(PotionType.LONG_SWIFTNESS, 1));
+                player.getInventory().setItem(4, createPotion(PotionType.LONG_STRENGTH, 1));
+                player.getInventory().setItem(5, createPotion(PotionType.LONG_STRENGTH, 1));
 
-                // Diamond Armor Prot4
+                // Diamond Armor Prot4 Unb3 (Standard Gapple Meta)
                 ItemStack helmet = new ItemStack(Material.DIAMOND_HELMET);
-                enchant(helmet, Enchantment.PROTECTION, 4);
+                enchant(helmet, Enchantment.PROTECTION, 4, Enchantment.UNBREAKING, 3);
                 ItemStack chest = new ItemStack(Material.DIAMOND_CHESTPLATE);
-                enchant(chest, Enchantment.PROTECTION, 4);
+                enchant(chest, Enchantment.PROTECTION, 4, Enchantment.UNBREAKING, 3);
                 ItemStack legs = new ItemStack(Material.DIAMOND_LEGGINGS);
-                enchant(legs, Enchantment.PROTECTION, 4);
+                enchant(legs, Enchantment.PROTECTION, 4, Enchantment.UNBREAKING, 3);
                 ItemStack boots = new ItemStack(Material.DIAMOND_BOOTS);
-                enchant(boots, Enchantment.PROTECTION, 4);
+                enchant(boots, Enchantment.PROTECTION, 4, Enchantment.UNBREAKING, 3);
 
                 player.getInventory().setHelmet(helmet);
                 player.getInventory().setChestplate(chest);
@@ -227,14 +237,17 @@ public enum Kit {
                 // Nothing at all - fists only
             }
             case COMBO -> {
-                // Diamond Sword Sharp5 Unbreaking10
+                // Diamond Sword Sharp5 Unbreaking3 (Standard Combo - kein Armor)
                 ItemStack sword = new ItemStack(Material.DIAMOND_SWORD);
-                enchant(sword, Enchantment.SHARPNESS, 5, Enchantment.UNBREAKING, 10);
+                enchant(sword, Enchantment.SHARPNESS, 5, Enchantment.UNBREAKING, 3);
 
                 player.getInventory().setItem(0, sword);
                 player.getInventory().setItem(1, new ItemStack(Material.ENCHANTED_GOLDEN_APPLE, 64));
-                player.getInventory().setItem(2, createPotion(PotionType.STRONG_STRENGTH, 1));
+                // 2x Speed II + 2x Strength II
+                player.getInventory().setItem(2, createPotion(PotionType.STRONG_SWIFTNESS, 1));
                 player.getInventory().setItem(3, createPotion(PotionType.STRONG_SWIFTNESS, 1));
+                player.getInventory().setItem(4, createPotion(PotionType.STRONG_STRENGTH, 1));
+                player.getInventory().setItem(5, createPotion(PotionType.STRONG_STRENGTH, 1));
             }
             case BRIDGE -> {
                 // Iron Sword
@@ -412,35 +425,50 @@ public enum Kit {
                 player.getInventory().setBoots(boots);
             }
             case DEBUFF -> {
-                // Diamond Sword Sharp5
+                // Diamond Sword Sharp3 Unb3 (Standard Debuff Meta)
                 ItemStack sword = new ItemStack(Material.DIAMOND_SWORD);
-                enchant(sword, Enchantment.SHARPNESS, 5);
+                enchant(sword, Enchantment.SHARPNESS, 3, Enchantment.UNBREAKING, 3);
 
                 player.getInventory().setItem(0, sword);
+                player.getInventory().setItem(1, new ItemStack(Material.ENDER_PEARL, 16));
+                // 3x Speed II (1:30)
+                player.getInventory().setItem(2, createPotion(PotionType.STRONG_SWIFTNESS, 1));
+                player.getInventory().setItem(3, createPotion(PotionType.STRONG_SWIFTNESS, 1));
+                player.getInventory().setItem(4, createPotion(PotionType.STRONG_SWIFTNESS, 1));
+                // 1x Fire Resistance (8:00)
+                player.getInventory().setItem(5, createPotion(PotionType.LONG_FIRE_RESISTANCE, 1));
+                // Splash Healing II
+                player.getInventory().setItem(6, createSplashPotion(PotionType.STRONG_HEALING, 1));
+                player.getInventory().setItem(7, createSplashPotion(PotionType.STRONG_HEALING, 1));
+                player.getInventory().setItem(8, createSplashPotion(PotionType.STRONG_HEALING, 1));
 
-                // Splash Healing II x24 in slots 1-8 and rows 2-3
-                for (int i = 1; i <= 24; i++) {
+                // Rows 2-3: More Splash Healing II (slots 9-22)
+                for (int i = 9; i <= 22; i++) {
                     player.getInventory().setItem(i, createSplashPotion(PotionType.STRONG_HEALING, 1));
                 }
+                // Debuff Potions:
                 // Splash Poison II x2
-                player.getInventory().setItem(25, createSplashPotion(PotionType.STRONG_POISON, 1));
-                player.getInventory().setItem(26, createSplashPotion(PotionType.STRONG_POISON, 1));
+                player.getInventory().setItem(23, createSplashPotion(PotionType.STRONG_POISON, 1));
+                player.getInventory().setItem(24, createSplashPotion(PotionType.STRONG_POISON, 1));
                 // Splash Slowness x2
-                player.getInventory().setItem(27, createSplashPotion(PotionType.STRONG_SLOWNESS, 1));
-                player.getInventory().setItem(28, createSplashPotion(PotionType.STRONG_SLOWNESS, 1));
+                player.getInventory().setItem(25, createSplashPotion(PotionType.STRONG_SLOWNESS, 1));
+                player.getInventory().setItem(26, createSplashPotion(PotionType.STRONG_SLOWNESS, 1));
                 // Splash Harming II x2
-                player.getInventory().setItem(29, createSplashPotion(PotionType.STRONG_HARMING, 1));
-                player.getInventory().setItem(30, createSplashPotion(PotionType.STRONG_HARMING, 1));
+                player.getInventory().setItem(27, createSplashPotion(PotionType.STRONG_HARMING, 1));
+                player.getInventory().setItem(28, createSplashPotion(PotionType.STRONG_HARMING, 1));
+                // Splash Weakness x2
+                player.getInventory().setItem(29, createSplashPotion(PotionType.LONG_WEAKNESS, 1));
+                player.getInventory().setItem(30, createSplashPotion(PotionType.LONG_WEAKNESS, 1));
 
-                // Full Diamond Armor Prot4
+                // Full Diamond Armor Prot2 Unb3 (Standard Debuff Meta)
                 ItemStack helmet = new ItemStack(Material.DIAMOND_HELMET);
-                enchant(helmet, Enchantment.PROTECTION, 4);
+                enchant(helmet, Enchantment.PROTECTION, 2, Enchantment.UNBREAKING, 3);
                 ItemStack chest = new ItemStack(Material.DIAMOND_CHESTPLATE);
-                enchant(chest, Enchantment.PROTECTION, 4);
+                enchant(chest, Enchantment.PROTECTION, 2, Enchantment.UNBREAKING, 3);
                 ItemStack legs = new ItemStack(Material.DIAMOND_LEGGINGS);
-                enchant(legs, Enchantment.PROTECTION, 4);
+                enchant(legs, Enchantment.PROTECTION, 2, Enchantment.UNBREAKING, 3);
                 ItemStack boots = new ItemStack(Material.DIAMOND_BOOTS);
-                enchant(boots, Enchantment.PROTECTION, 4);
+                enchant(boots, Enchantment.PROTECTION, 2, Enchantment.UNBREAKING, 3);
 
                 player.getInventory().setHelmet(helmet);
                 player.getInventory().setChestplate(chest);
